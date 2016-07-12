@@ -312,15 +312,7 @@ ADD_TEST ( pbrt_unit_test
 
 INSTALL ( TARGETS
   pbrt_exe
-  bsdftest
-  imgtool
-  obj2pbrt
   DESTINATION
-  bin
+  ./
   )
-
-INSTALL ( TARGETS
-  pbrt
-  DESTINATION
-  lib
-  )
+  
