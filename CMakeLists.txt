@@ -207,7 +207,7 @@ SET ( PBRT_CORE_HEADERS
   src/core/transform.h
   )
 
-FILE ( GLOB PBRT_SOURCE
+FILE(GLOB PBRT_SOURCE
   src/ext/*.cpp
   src/accelerators/*.cpp
   src/cameras/*.cpp
@@ -219,7 +219,21 @@ FILE ( GLOB PBRT_SOURCE
   src/shapes/*.cpp
   src/textures/*.cpp
   src/media/*.cpp
-  )
+)
+
+FILE(GLOB PBRT_HEADERS
+  src/ext/*.h
+  src/accelerators/*.h
+  src/cameras/*.h
+  src/filters/*.h
+  src/integrators/*.h
+  src/lights/*.h
+  src/materials/*.h
+  src/samplers/*.h
+  src/shapes/*.h
+  src/textures/*.h
+  src/media/*.h
+)
 
 INCLUDE_DIRECTORIES ( src )
 INCLUDE_DIRECTORIES ( src/core )
@@ -229,13 +243,14 @@ ADD_LIBRARY ( pbrt STATIC
   ${PBRT_CORE_SOURCE}
   ${PBRT_CORE_HEADERS}
   ${PBRT_SOURCE}
+  ${PBRT_HEADERS}
   )
 
 
 GET_FILENAME_COMPONENT(ABS_PATH "pbrt.h" ABSOLUTE)
 GET_FILENAME_COMPONENT(BASE_PATH ${ABS_PATH} DIRECTORY)
 
-SET(SORTEE ${PBRT_CORE_SOURCE} ${PBRT_CORE_HEADERS} ${PBRT_SOURCE})
+SET(SORTEE ${PBRT_CORE_SOURCE} ${PBRT_CORE_HEADERS} ${PBRT_SOURCE} ${PBRT_HEADERS})
 foreach(FILE ${SORTEE})
 	# get relative file name
 	GET_FILENAME_COMPONENT(ABS_PATH ${FILE} ABSOLUTE) #first we need the absolute one, as the next line does not work with relative paths
