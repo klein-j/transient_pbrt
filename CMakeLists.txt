@@ -231,6 +231,32 @@ ADD_LIBRARY ( pbrt STATIC
   ${PBRT_SOURCE}
   )
 
+
+GET_FILENAME_COMPONENT(ABS_PATH "pbrt.h" ABSOLUTE)
+GET_FILENAME_COMPONENT(BASE_PATH ${ABS_PATH} DIRECTORY)
+
+SET(SORTEE ${PBRT_CORE_SOURCE} ${PBRT_CORE_HEADERS} ${PBRT_SOURCE})
+foreach(FILE ${SORTEE})
+	# get relative file name
+	GET_FILENAME_COMPONENT(ABS_PATH ${FILE} ABSOLUTE) #first we need the absolute one, as the next line does not work with relative paths
+	file(RELATIVE_PATH FILE ${BASE_PATH} ${ABS_PATH})
+
+	get_filename_component(PARENT_DIR "${FILE}" DIRECTORY)
+
+	# skip src or include and changes /'s to \\'s
+	string(REGEX REPLACE "(\\./)?(src|include)/?" "" GROUP "${PARENT_DIR}")
+	string(REPLACE "/" "\\" GROUP "${GROUP}")
+
+	# group into "Source Files" and "Header Files"
+	if ("${FILE}" MATCHES ".*\\.cpp")
+		set(GROUP "Source Files\\${GROUP}")
+	elseif("${FILE}" MATCHES ".*\\.h")
+		set(GROUP "Header Files\\${GROUP}")
+	endif()
+
+	source_group("${GROUP}" FILES "${FILE}")
+endforeach()
+  
 IF (WIN32)
   # Avoid a name clash when building on Visual Studio
   SET_TARGET_PROPERTIES ( pbrt
