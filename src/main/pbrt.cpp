@@ -95,18 +95,11 @@ int main(int argc, char *argv[]) {
 
     // Print welcome banner
     if (!options.quiet && !options.cat && !options.toPly) {
-        printf("pbrt version 3 (built %s at %s) [Detected %d cores]\n",
+        printf("Transient Renderer Alpha (built %s at %s) [Detected %d cores]\n",
                __DATE__, __TIME__, NumSystemCores());
 #ifndef NDEBUG
         printf("*** DEBUG BUILD ***\n");
 #endif // !NDEBUG
-        printf(
-            "Copyright (c)1998-2016 Matt Pharr, Greg Humphreys, and Wenzel "
-            "Jakob.\n");
-        printf(
-            "The source code to pbrt (but *not* the book contents) is covered "
-            "by the BSD License.\n");
-        printf("See the file LICENSE.txt for the conditions of the license.\n");
         fflush(stdout);
     }
     pbrtInit(options);

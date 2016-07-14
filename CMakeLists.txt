@@ -1,6 +1,6 @@
 CMAKE_MINIMUM_REQUIRED ( VERSION 2.8 )
 
-PROJECT ( PBRT-V3 )
+PROJECT ( TransientRenderer )
 
 ENABLE_TESTING()
 
@@ -289,7 +289,7 @@ ADD_EXECUTABLE ( pbrt_exe
 
 SET_TARGET_PROPERTIES ( pbrt_exe
   PROPERTIES
-  OUTPUT_NAME pbrt
+  OUTPUT_NAME TransientRenderer
   )
 
 TARGET_LINK_LIBRARIES ( pbrt_exe
