@@ -59,6 +59,7 @@
 #include "integrators/sppm.h"
 #include "integrators/volpath.h"
 #include "integrators/whitted.h"
+#include "integrators/transientpath.h"
 #include "lights/diffuse.h"
 #include "lights/distant.h"
 #include "lights/goniometric.h"
@@ -1410,7 +1411,9 @@ Integrator *RenderOptions::MakeIntegrator() const {
     } else if (IntegratorName == "mlt") {
         integrator = CreateMLTIntegrator(IntegratorParams, camera);
     } else if (IntegratorName == "sppm") {
-        integrator = CreateSPPMIntegrator(IntegratorParams, camera);
+		integrator = CreateSPPMIntegrator(IntegratorParams, camera);
+	} else if(IntegratorName == "transientpath") {
+		integrator = CreateTransientPathIntegrator(IntegratorParams, sampler, camera);
     } else {
         Error("Integrator \"%s\" unknown.", IntegratorName.c_str());
         return nullptr;
