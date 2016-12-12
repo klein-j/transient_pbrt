@@ -10,18 +10,20 @@
 
 Spectrum TransientPathIntegrator::Li(const RayDifferential &ray, const Scene &scene, Sampler &sampler, MemoryArena &arena, int depth) const
 {
-	Spectrum result(0.5);
+	Spectrum result(0.001);
 
 	SurfaceInteraction isect;
 	auto foundIntersection = scene.Intersect(ray, &isect);
 	if(foundIntersection)
 	{
 		auto dist = (isect.p-ray.o).Length();
-		result[0]=isect.uv.x;
-		result[1]=1;
-		result[2]=isect.uv.y;
+		
+		// uv mapping display:
+		//result[0]=isect.uv.x;
+		//result[1]=1;
+		//result[2]=isect.uv.y;
 
-		//result *= dist;
+		result *= dist;
 	}
 
 	return result;

@@ -219,6 +219,7 @@ FILE(GLOB PBRT_SOURCE
   src/shapes/*.cpp
   src/textures/*.cpp
   src/media/*.cpp
+  src/films/*.cpp
 )
 
 FILE(GLOB PBRT_HEADERS
@@ -233,6 +234,7 @@ FILE(GLOB PBRT_HEADERS
   src/shapes/*.h
   src/textures/*.h
   src/media/*.h
+  src/films/*.h
 )
 
 INCLUDE_DIRECTORIES ( src )
