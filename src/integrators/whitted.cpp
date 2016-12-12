@@ -38,6 +38,8 @@
 #include "film.h"
 #include "paramset.h"
 
+namespace pbrt {
+
 // WhittedIntegrator Method Definitions
 Spectrum WhittedIntegrator::Li(const RayDifferential &ray, const Scene &scene,
                                Sampler &sampler, MemoryArena &arena,
@@ -90,7 +92,7 @@ WhittedIntegrator *CreateWhittedIntegrator(
     int maxDepth = params.FindOneInt("maxdepth", 5);
     int np;
     const int *pb = params.FindInt("pixelbounds", &np);
-    Bounds2i pixelBounds = camera->film->croppedPixelBounds;
+    Bounds2i pixelBounds = camera->film->GetSampleBounds();
     if (pb) {
         if (np != 4)
             Error("Expected four values for \"pixelbounds\" parameter. Got %d.",
@@ -104,3 +106,5 @@ WhittedIntegrator *CreateWhittedIntegrator(
     }
     return new WhittedIntegrator(maxDepth, camera, sampler, pixelBounds);
 }
+
+}  // namespace pbrt

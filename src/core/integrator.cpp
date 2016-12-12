@@ -42,8 +42,10 @@
 #include "progressreporter.h"
 #include "camera.h"
 #include "stats.h"
+
+namespace pbrt {
+
 STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
-STAT_TIMER("Time/Rendering", renderingTime);
 
 // Integrator Method Definitions
 Integrator::~Integrator() {}
@@ -82,17 +84,25 @@ Spectrum UniformSampleAllLights(const Interaction &it, const Scene &scene,
 
 Spectrum UniformSampleOneLight(const Interaction &it, const Scene &scene,
                                MemoryArena &arena, Sampler &sampler,
-                               bool handleMedia) {
+                               bool handleMedia, const Distribution1D *lightDistrib) {
     ProfilePhase p(Prof::DirectLighting);
     // Randomly choose a single light to sample, _light_
     int nLights = int(scene.lights.size());
     if (nLights == 0) return Spectrum(0.f);
-    int lightNum = std::min((int)(sampler.Get1D() * nLights), nLights - 1);
+    int lightNum;
+    Float lightPdf;
+    if (lightDistrib) {
+        lightNum = lightDistrib->SampleDiscrete(sampler.Get1D(), &lightPdf);
+        if (lightPdf == 0) return Spectrum(0.f);
+    } else {
+        lightNum = std::min((int)(sampler.Get1D() * nLights), nLights - 1);
+        lightPdf = Float(1) / nLights;
+    }
     const std::shared_ptr<Light> &light = scene.lights[lightNum];
     Point2f uLight = sampler.Get2D();
     Point2f uScattering = sampler.Get2D();
-    return (Float)nLights * EstimateDirect(it, uScattering, *light, uLight,
-                                           scene, sampler, arena, handleMedia);
+    return EstimateDirect(it, uScattering, *light, uLight,
+                          scene, sampler, arena, handleMedia) / lightPdf;
 }
 
 Spectrum EstimateDirect(const Interaction &it, const Point2f &uScattering,
@@ -107,6 +117,8 @@ Spectrum EstimateDirect(const Interaction &it, const Point2f &uScattering,
     Float lightPdf = 0, scatteringPdf = 0;
     VisibilityTester visibility;
     Spectrum Li = light.Sample_Li(it, uLight, &wi, &lightPdf, &visibility);
+    VLOG(2) << "EstimateDirect uLight:" << uLight << " -> Li: " << Li << ", wi: "
+            << wi << ", pdf: " << lightPdf;
     if (lightPdf > 0 && !Li.IsBlack()) {
         // Compute BSDF or phase function's value for light sample
         Spectrum f;
@@ -116,19 +128,27 @@ Spectrum EstimateDirect(const Interaction &it, const Point2f &uScattering,
             f = isect.bsdf->f(isect.wo, wi, bsdfFlags) *
                 AbsDot(wi, isect.shading.n);
             scatteringPdf = isect.bsdf->Pdf(isect.wo, wi, bsdfFlags);
+            VLOG(2) << "  surf f*dot :" << f << ", scatteringPdf: " << scatteringPdf;
         } else {
             // Evaluate phase function for light sampling strategy
             const MediumInteraction &mi = (const MediumInteraction &)it;
             Float p = mi.phase->p(mi.wo, wi);
             f = Spectrum(p);
             scatteringPdf = p;
+            VLOG(2) << "  medium p: " << p;
         }
         if (!f.IsBlack()) {
             // Compute effect of visibility for light source sample
-            if (handleMedia)
+            if (handleMedia) {
                 Li *= visibility.Tr(scene, sampler);
-            else if (!visibility.Unoccluded(scene))
+                VLOG(2) << "  after Tr, Li: " << Li;
+            } else {
+              if (!visibility.Unoccluded(scene)) {
+                VLOG(2) << "  shadow ray blocked";
                 Li = Spectrum(0.f);
+              } else
+                VLOG(2) << "  shadow ray unoccluded";
+            }
 
             // Add light's contribution to reflected radiance
             if (!Li.IsBlack()) {
@@ -162,6 +182,8 @@ Spectrum EstimateDirect(const Interaction &it, const Point2f &uScattering,
             f = Spectrum(p);
             scatteringPdf = p;
         }
+        VLOG(2) << "  BSDF / phase sampling f: " << f << ", scatteringPdf: " <<
+            scatteringPdf;
         if (!f.IsBlack() && scatteringPdf > 0) {
             // Account for light contributions along sampled direction _wi_
             Float weight = 1;
@@ -204,7 +226,6 @@ std::unique_ptr<Distribution1D> ComputeLightPowerDistribution(
 
 // SamplerIntegrator Method Definitions
 void SamplerIntegrator::Render(const Scene &scene) {
-    ProfilePhase p(Prof::IntegratorRender);
     Preprocess(scene, *sampler);
     // Render image tiles in parallel
 
@@ -216,7 +237,6 @@ void SamplerIntegrator::Render(const Scene &scene) {
                    (sampleExtent.y + tileSize - 1) / tileSize);
     ProgressReporter reporter(nTiles.x * nTiles.y, "Rendering");
     {
-        StatTimer timer(&renderingTime);
         ParallelFor2D([&](Point2i tile) {
             // Render section of image corresponding to _tile_
 
@@ -233,6 +253,7 @@ void SamplerIntegrator::Render(const Scene &scene) {
             int y0 = sampleBounds.pMin.y + tile.y * tileSize;
             int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
             Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
+            LOG(INFO) << "Starting image tile " << tileBounds;
 
             // Get _FilmTile_ for tile
             std::unique_ptr<FilmTile> filmTile =
@@ -271,27 +292,29 @@ void SamplerIntegrator::Render(const Scene &scene) {
 
                     // Issue warning if unexpected radiance value returned
                     if (L.HasNaNs()) {
-                        Error(
+                        LOG(ERROR) << StringPrintf(
                             "Not-a-number radiance value returned "
                             "for pixel (%d, %d), sample %d. Setting to black.",
                             pixel.x, pixel.y,
                             (int)tileSampler->CurrentSampleNumber());
                         L = Spectrum(0.f);
                     } else if (L.y() < -1e-5) {
-                        Error(
+                        LOG(ERROR) << StringPrintf(
                             "Negative luminance value, %f, returned "
                             "for pixel (%d, %d), sample %d. Setting to black.",
                             L.y(), pixel.x, pixel.y,
                             (int)tileSampler->CurrentSampleNumber());
                         L = Spectrum(0.f);
                     } else if (std::isinf(L.y())) {
-                        Error(
+                          LOG(ERROR) << StringPrintf(
                             "Infinite luminance value returned "
                             "for pixel (%d, %d), sample %d. Setting to black.",
                             pixel.x, pixel.y,
                             (int)tileSampler->CurrentSampleNumber());
                         L = Spectrum(0.f);
                     }
+                    VLOG(1) << "Camera sample: " << cameraSample << " -> ray: " <<
+                        ray << " -> L = " << L;
 
                     // Add camera ray's contribution to image
                     filmTile->AddSample(cameraSample.pFilm, L, rayWeight);
@@ -301,6 +324,7 @@ void SamplerIntegrator::Render(const Scene &scene) {
                     arena.Reset();
                 } while (tileSampler->StartNextSample());
             }
+            LOG(INFO) << "Finished image tile " << tileBounds;
 
             // Merge image tile into _Film_
             camera->film->MergeFilmTile(std::move(filmTile));
@@ -308,6 +332,7 @@ void SamplerIntegrator::Render(const Scene &scene) {
         }, nTiles);
         reporter.Done();
     }
+    LOG(INFO) << "Rendering finished";
 
     // Save final image after rendering
     camera->film->WriteImage();
@@ -399,3 +424,5 @@ Spectrum SamplerIntegrator::SpecularTransmit(
     }
     return L;
 }
+
+}  // namespace pbrt

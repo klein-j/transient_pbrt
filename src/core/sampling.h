@@ -44,6 +44,8 @@
 #include "rng.h"
 #include <algorithm>
 
+namespace pbrt {
+
 // Sampling Declarations
 void StratifiedSample1D(Float *samples, int nsamples, RNG &rng,
                         bool jitter = true);
@@ -73,12 +75,14 @@ struct Distribution1D {
         if (off) *off = offset;
         // Compute offset along CDF segment
         Float du = u - cdf[offset];
-        if ((cdf[offset + 1] - cdf[offset]) > 0)
+        if ((cdf[offset + 1] - cdf[offset]) > 0) {
+            CHECK_GT(cdf[offset + 1], cdf[offset]);
             du /= (cdf[offset + 1] - cdf[offset]);
-        Assert(!std::isnan(du));
+        }
+        DCHECK(!std::isnan(du));
 
         // Compute PDF for sampled offset
-        if (pdf) *pdf = func[offset] / funcInt;
+        if (pdf) *pdf = (funcInt > 0) ? func[offset] / funcInt : 0;
 
         // Return $x\in{}[0,1)$ corresponding to sample
         return (offset + du) / Count();
@@ -88,14 +92,14 @@ struct Distribution1D {
         // Find surrounding CDF segments and _offset_
         int offset = FindInterval(cdf.size(),
                                   [&](int index) { return cdf[index] <= u; });
-        if (pdf) *pdf = func[offset] / (funcInt * Count());
+        if (pdf) *pdf = (funcInt > 0) ? func[offset] / (funcInt * Count()) : 0;
         if (uRemapped)
             *uRemapped = (u - cdf[offset]) / (cdf[offset + 1] - cdf[offset]);
-        if (uRemapped) Assert(*uRemapped >= 0.f && *uRemapped <= 1.f);
+        if (uRemapped) CHECK(*uRemapped >= 0.f && *uRemapped <= 1.f);
         return offset;
     }
     Float DiscretePDF(int index) const {
-        Assert(index >= 0 && index < Count());
+        CHECK(index >= 0 && index < Count());
         return func[index] / (funcInt * Count());
     }
 
@@ -168,5 +172,7 @@ inline Float PowerHeuristic(int nf, Float fPdf, int ng, Float gPdf) {
     Float f = nf * fPdf, g = ng * gPdf;
     return (f * f) / (f * f + g * g);
 }
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_SAMPLING_H

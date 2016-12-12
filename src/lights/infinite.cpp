@@ -35,6 +35,9 @@
 #include "imageio.h"
 #include "paramset.h"
 #include "sampling.h"
+#include "stats.h"
+
+namespace pbrt {
 
 // InfiniteAreaLight Method Definitions
 InfiniteAreaLight::InfiniteAreaLight(const Transform &LightToWorld,
@@ -95,6 +98,7 @@ Spectrum InfiniteAreaLight::Le(const RayDifferential &ray) const {
 Spectrum InfiniteAreaLight::Sample_Li(const Interaction &ref, const Point2f &u,
                                       Vector3f *wi, Float *pdf,
                                       VisibilityTester *vis) const {
+    ProfilePhase _(Prof::LightSample);
     // Find $(u,v)$ sample coordinates in infinite light texture
     Float mapPdf;
     Point2f uv = distribution->SampleContinuous(u, &mapPdf);
@@ -118,6 +122,7 @@ Spectrum InfiniteAreaLight::Sample_Li(const Interaction &ref, const Point2f &u,
 }
 
 Float InfiniteAreaLight::Pdf_Li(const Interaction &, const Vector3f &w) const {
+    ProfilePhase _(Prof::LightPdf);
     Vector3f wi = WorldToLight(w);
     Float theta = SphericalTheta(wi), phi = SphericalPhi(wi);
     Float sinTheta = std::sin(theta);
@@ -129,6 +134,7 @@ Float InfiniteAreaLight::Pdf_Li(const Interaction &, const Vector3f &w) const {
 Spectrum InfiniteAreaLight::Sample_Le(const Point2f &u1, const Point2f &u2,
                                       Float time, Ray *ray, Normal3f *nLight,
                                       Float *pdfPos, Float *pdfDir) const {
+    ProfilePhase _(Prof::LightSample);
     // Compute direction for infinite light sample ray
     Point2f u = u1;
 
@@ -158,6 +164,7 @@ Spectrum InfiniteAreaLight::Sample_Le(const Point2f &u1, const Point2f &u2,
 
 void InfiniteAreaLight::Pdf_Le(const Ray &ray, const Normal3f &, Float *pdfPos,
                                Float *pdfDir) const {
+    ProfilePhase _(Prof::LightPdf);
     Vector3f d = -WorldToLight(ray.d);
     Float theta = SphericalTheta(d), phi = SphericalPhi(d);
     Point2f uv(phi * Inv2Pi, theta * InvPi);
@@ -171,8 +178,11 @@ std::shared_ptr<InfiniteAreaLight> CreateInfiniteLight(
     Spectrum L = paramSet.FindOneSpectrum("L", Spectrum(1.0));
     Spectrum sc = paramSet.FindOneSpectrum("scale", Spectrum(1.0));
     std::string texmap = paramSet.FindOneFilename("mapname", "");
-    int nSamples = paramSet.FindOneInt("nsamples", 1);
+    int nSamples = paramSet.FindOneInt("samples",
+                                       paramSet.FindOneInt("nsamples", 1));
     if (PbrtOptions.quickRender) nSamples = std::max(1, nSamples / 4);
     return std::make_shared<InfiniteAreaLight>(light2world, L * sc, nSamples,
                                                texmap);
 }
+
+}  // namespace pbrt

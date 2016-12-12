@@ -47,6 +47,8 @@
 #include "sampler.h"
 #include "material.h"
 
+namespace pbrt {
+
 // Integrator Declarations
 class Integrator {
   public:
@@ -61,7 +63,8 @@ Spectrum UniformSampleAllLights(const Interaction &it, const Scene &scene,
                                 bool handleMedia = false);
 Spectrum UniformSampleOneLight(const Interaction &it, const Scene &scene,
                                MemoryArena &arena, Sampler &sampler,
-                               bool handleMedia = false);
+                               bool handleMedia = false,
+                               const Distribution1D *lightDistrib = nullptr);
 Spectrum EstimateDirect(const Interaction &it, const Point2f &uShading,
                         const Light &light, const Point2f &uLight,
                         const Scene &scene, Sampler &sampler,
@@ -101,5 +104,7 @@ class SamplerIntegrator : public Integrator {
     std::shared_ptr<Sampler> sampler;
     const Bounds2i pixelBounds;
 };
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_INTEGRATOR_H

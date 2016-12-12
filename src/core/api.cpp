@@ -69,6 +69,7 @@
 #include "lights/spot.h"
 #include "materials/fourier.h"
 #include "materials/glass.h"
+#include "materials/hair.h"
 #include "materials/kdsubsurface.h"
 #include "materials/matte.h"
 #include "materials/metal.h"
@@ -114,6 +115,8 @@
 #include <map>
 #include <stdio.h>
 
+namespace pbrt {
+
 // API Global Variables
 Options PbrtOptions;
 
@@ -125,11 +128,13 @@ PBRT_CONSTEXPR int AllTransformsBits = (1 << MaxTransforms) - 1;
 struct TransformSet {
     // TransformSet Public Methods
     Transform &operator[](int i) {
-        Assert(i >= 0 && i < MaxTransforms);
+        CHECK_GE(i, 0);
+        CHECK_LT(i, MaxTransforms);
         return t[i];
     }
     const Transform &operator[](int i) const {
-        Assert(i >= 0 && i < MaxTransforms);
+        CHECK_GE(i, 0);
+        CHECK_LT(i, MaxTransforms);
         return t[i];
     }
     friend TransformSet Inverse(const TransformSet &ts) {
@@ -173,6 +178,7 @@ struct RenderOptions {
     std::vector<std::shared_ptr<Primitive>> primitives;
     std::map<std::string, std::vector<std::shared_ptr<Primitive>>> instances;
     std::vector<std::shared_ptr<Primitive>> *currentInstance = nullptr;
+    bool haveScatteringMedia = false;
 };
 
 struct GraphicsState {
@@ -398,6 +404,8 @@ std::vector<std::shared_ptr<Shape>> MakeShapes(const std::string &name,
     return shapes;
 }
 
+STAT_COUNTER("Scene/Materials created", nMaterialsCreated);
+
 std::shared_ptr<Material> MakeMaterial(const std::string &name,
                                        const TextureParams &mp) {
     Material *material = nullptr;
@@ -413,6 +421,8 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateGlassMaterial(mp);
     else if (name == "mirror")
         material = CreateMirrorMaterial(mp);
+    else if (name == "hair")
+        material = CreateHairMaterial(mp);
     else if (name == "mix") {
         std::string m1 = mp.FindString("namedmaterial1", "");
         std::string m2 = mp.FindString("namedmaterial2", "");
@@ -442,8 +452,10 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateKdSubsurfaceMaterial(mp);
     else if (name == "fourier")
         material = CreateFourierMaterial(mp);
-    else
-        Warning("Material \"%s\" unknown.", name.c_str());
+    else {
+        Warning("Material \"%s\" unknown. Using \"matte\".", name.c_str());
+        material = CreateMatteMaterial(mp);
+    }
 
     if ((name == "subsurface" || name == "kdsubsurface") &&
         (renderOptions->IntegratorName != "path" &&
@@ -456,6 +468,7 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
 
     mp.ReportUnused();
     if (!material) Error("Unable to create material \"%s\"", name.c_str());
+    else ++nMaterialsCreated;
     return std::shared_ptr<Material>(material);
 }
 
@@ -616,13 +629,6 @@ std::shared_ptr<AreaLight> MakeAreaLight(const std::string &name,
     return area;
 }
 
-Integrator *MakeIntegrator(const std::string &name, const ParamSet &paramSet) {
-    Integrator *si = nullptr;
-
-    paramSet.ReportUnused();
-    return si;
-}
-
 std::shared_ptr<Primitive> MakeAccelerator(
     const std::string &name,
     const std::vector<std::shared_ptr<Primitive>> &prims,
@@ -643,7 +649,8 @@ Camera *MakeCamera(const std::string &name, const ParamSet &paramSet,
                    Float transformEnd, Film *film) {
     Camera *camera = nullptr;
     MediumInterface mediumInterface = graphicsState.CreateMediumInterface();
-    Assert(MaxTransforms == 2);
+    static_assert(MaxTransforms == 2,
+                  "TransformCache assumes only two transforms");
     Transform *cam2world[2];
     transformCache.Lookup(cam2worldSet[0], &cam2world[0], nullptr);
     transformCache.Lookup(cam2worldSet[1], &cam2world[1], nullptr);
@@ -734,6 +741,8 @@ void pbrtInit(const Options &opt) {
 
     // General \pbrt Initialization
     SampledSpectrum::Init();
+    ParallelInit();  // Threads must be launched before the profiler is
+                     // initialized.
     InitProfiler();
 }
 
@@ -744,8 +753,9 @@ void pbrtCleanup() {
     else if (currentApiState == APIState::WorldBlock)
         Error("pbrtCleanup() called while inside world block.");
     currentApiState = APIState::Uninitialized;
-    TerminateWorkerThreads();
+    ParallelCleanup();
     renderOptions.reset(nullptr);
+    CleanupProfiler();
 }
 
 void pbrtIdentity() {
@@ -961,6 +971,7 @@ void pbrtMediumInterface(const std::string &insideName,
     VERIFY_INITIALIZED("MediumInterface");
     graphicsState.currentInsideMedium = insideName;
     graphicsState.currentOutsideMedium = outsideName;
+    renderOptions->haveScatteringMedia = true;
     if (PbrtOptions.cat || PbrtOptions.toPly)
         printf("%*sMediumInterface \"%s\" \"%s\"\n", catIndentCount, "",
                insideName.c_str(), outsideName.c_str());
@@ -1044,7 +1055,7 @@ void pbrtTexture(const std::string &name, const std::string &type,
         // Create _Float_ texture and store in _floatTextures_
         if (graphicsState.floatTextures.find(name) !=
             graphicsState.floatTextures.end())
-            Info("Texture \"%s\" being redefined", name.c_str());
+            Warning("Texture \"%s\" being redefined", name.c_str());
         WARN_IF_ANIMATED_TRANSFORM("Texture");
         std::shared_ptr<Texture<Float>> ft =
             MakeFloatTexture(texname, curTransform[0], tp);
@@ -1053,7 +1064,7 @@ void pbrtTexture(const std::string &name, const std::string &type,
         // Create _color_ texture and store in _spectrumTextures_
         if (graphicsState.spectrumTextures.find(name) !=
             graphicsState.spectrumTextures.end())
-            Info("Texture \"%s\" being redefined", name.c_str());
+            Warning("Texture \"%s\" being redefined", name.c_str());
         WARN_IF_ANIMATED_TRANSFORM("Texture");
         std::shared_ptr<Texture<Spectrum>> st =
             MakeSpectrumTexture(texname, curTransform[0], tp);
@@ -1090,15 +1101,18 @@ void pbrtMakeNamedMaterial(const std::string &name, const ParamSet &params) {
     WARN_IF_ANIMATED_TRANSFORM("MakeNamedMaterial");
     if (matName == "")
         Error("No parameter string \"type\" found in MakeNamedMaterial");
-    else {
-        std::shared_ptr<Material> mtl = MakeMaterial(matName, mp);
-        if (mtl) graphicsState.namedMaterials[name] = mtl;
-    }
+
     if (PbrtOptions.cat || PbrtOptions.toPly) {
         printf("%*sMakeNamedMaterial \"%s\" ", catIndentCount, "",
                name.c_str());
         params.Print(catIndentCount);
         printf("\n");
+    } else {
+        std::shared_ptr<Material> mtl = MakeMaterial(matName, mp);
+        if (graphicsState.namedMaterials.find(name) !=
+            graphicsState.namedMaterials.end())
+            Warning("Named material \"%s\" redefined.", name.c_str());
+        graphicsState.namedMaterials[name] = mtl;
     }
 }
 
@@ -1195,7 +1209,8 @@ void pbrtShape(const std::string &name, const ParamSet &params) {
         // Create single _TransformedPrimitive_ for _prims_
 
         // Get _animatedObjectToWorld_ transform for shape
-        Assert(MaxTransforms == 2);
+        static_assert(MaxTransforms == 2,
+                      "TransformCache assumes only two transforms");
         Transform *ObjToWorld[2];
         transformCache.Lookup(curTransform[0], &ObjToWorld[0], nullptr);
         transformCache.Lookup(curTransform[1], &ObjToWorld[1], nullptr);
@@ -1229,12 +1244,19 @@ std::shared_ptr<Material> GraphicsState::CreateMaterial(
     const ParamSet &params) {
     TextureParams mp(params, materialParams, floatTextures, spectrumTextures);
     std::shared_ptr<Material> mtl;
-    if (currentNamedMaterial != "" &&
-        namedMaterials.find(currentNamedMaterial) != namedMaterials.end())
-        mtl = namedMaterials[graphicsState.currentNamedMaterial];
-    if (!mtl) mtl = MakeMaterial(material, mp);
-    if (!mtl && material != "" && material != "none")
-        mtl = MakeMaterial("matte", mp);
+    if (currentNamedMaterial != "") {
+        if (namedMaterials.find(currentNamedMaterial) != namedMaterials.end())
+            mtl = namedMaterials[graphicsState.currentNamedMaterial];
+        else {
+            Error("Named material \"%s\" not defined. Using \"matte\".",
+                  currentNamedMaterial.c_str());
+            mtl = MakeMaterial("matte", mp);
+        }
+    } else {
+        mtl = MakeMaterial(material, mp);
+        if (!mtl && material != "" && material != "none")
+            mtl = MakeMaterial("matte", mp);
+    }
     return mtl;
 }
 
@@ -1318,7 +1340,8 @@ void pbrtObjectInstance(const std::string &name) {
         in.erase(in.begin(), in.end());
         in.push_back(accel);
     }
-    Assert(MaxTransforms == 2);
+    static_assert(MaxTransforms == 2,
+                  "TransformCache assumes only two transforms");
     // Create _animatedInstanceToWorld_ transform for instance
     Transform *InstanceToWorld[2];
     transformCache.Lookup(curTransform[0], &InstanceToWorld[0], nullptr);
@@ -1350,19 +1373,35 @@ void pbrtWorldEnd() {
     } else {
         std::unique_ptr<Integrator> integrator(renderOptions->MakeIntegrator());
         std::unique_ptr<Scene> scene(renderOptions->MakeScene());
+
+        // This is kind of ugly; we directly override the current profiler
+        // state to switch from parsing/scene construction related stuff to
+        // rendering stuff and then switch it back below. The underlying
+        // issue is that all the rest of the profiling system assumes
+        // hierarchical inheritance of profiling state; this is the only
+        // place where that isn't the case.
+        CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::SceneConstruction));
+        ProfilerState = ProfToBits(Prof::IntegratorRender);
+
         if (scene && integrator) integrator->Render(*scene);
-        TerminateWorkerThreads();
+
+        MergeWorkerThreadStats();
+        ReportThreadStats();
+        if (!PbrtOptions.quiet) {
+            PrintStats(stdout);
+            ReportProfilerResults(stdout);
+            ClearStats();
+            ClearProfiler();
+        }
+
+        ProfilerState = ProfToBits(Prof::SceneConstruction);
     }
 
     // Clean up after rendering
     graphicsState = GraphicsState();
     transformCache.Clear();
     currentApiState = APIState::OptionsBlock;
-    ReportThreadStats();
-    if (!PbrtOptions.quiet && !PbrtOptions.cat && !PbrtOptions.toPly) {
-        PrintStats(stdout);
-        ReportProfilerResults(stdout);
-    }
+
     for (int i = 0; i < MaxTransforms; ++i) curTransform[i] = Transform();
     activeTransformBits = AllTransformsBits;
     namedCoordinateSystems.erase(namedCoordinateSystems.begin(),
@@ -1419,6 +1458,14 @@ Integrator *RenderOptions::MakeIntegrator() const {
         return nullptr;
     }
 
+    if (renderOptions->haveScatteringMedia && IntegratorName != "volpath" &&
+        IntegratorName != "bdpt" && IntegratorName != "mlt") {
+        Warning(
+            "Scene has scattering media but \"%s\" integrator doesn't support "
+            "volume scattering. Consider using \"volpath\", \"bdpt\", or "
+            "\"mlt\".", IntegratorName.c_str());
+    }
+
     IntegratorParams.ReportUnused();
     // Warn if no light sources are defined
     if (lights.size() == 0)
@@ -1435,8 +1482,10 @@ Camera *RenderOptions::MakeCamera() const {
         Error("Unable to create film.");
         return nullptr;
     }
-    Camera *camera = ::MakeCamera(CameraName, CameraParams, CameraToWorld,
+    Camera *camera = pbrt::MakeCamera(CameraName, CameraParams, CameraToWorld,
                                   renderOptions->transformStartTime,
                                   renderOptions->transformEndTime, film);
     return camera;
 }
+
+}  // namespace pbrt

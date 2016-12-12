@@ -40,8 +40,10 @@
 
 // core/memory.h*
 #include "pbrt.h"
-#include "parallel.h"
+#include "port.h"
 #include <list>
+
+namespace pbrt {
 
 // Memory Declarations
 #define ARENA_ALLOC(arena, Type) new ((arena).Alloc(sizeof(Type))) Type
@@ -54,7 +56,7 @@ T *AllocAligned(size_t count) {
 void FreeAligned(void *);
 class
 #ifdef PBRT_HAVE_ALIGNAS
-alignas(128)
+alignas(PBRT_L1_CACHE_LINE_SIZE)
 #endif // PBRT_HAVE_ALIGNAS
     MemoryArena {
   public:
@@ -176,5 +178,7 @@ class BlockedArray {
     T *data;
     const int uRes, vRes, uBlocks;
 };
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_MEMORY_H

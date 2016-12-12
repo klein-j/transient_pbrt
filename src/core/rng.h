@@ -41,16 +41,23 @@
 // core/rng.h*
 #include "pbrt.h"
 
+namespace pbrt {
+
 // Random Number Declarations
 #ifndef PBRT_HAVE_HEX_FP_CONSTANTS
-static const Float OneMinusEpsilon = 0.9999999403953552f;
+static const double DoubleOneMinusEpsilon = 0.99999999999999989;
+static const float FloatOneMinusEpsilon = 0.99999994;
 #else
+static const double DoubleOneMinusEpsilon = 0x1.fffffffffffffp-1;
+static const float FloatOneMinusEpsilon = 0x1.fffffep-1;
+#endif
+
 #ifdef PBRT_FLOAT_IS_DOUBLE
-static const Float OneMinusEpsilon = 0x1.fffffffffffffp-1;
+static const Float OneMinusEpsilon = DoubleOneMinusEpsilon;
 #else
-static const Float OneMinusEpsilon = 0x1.fffffep-1;
+static const Float OneMinusEpsilon = FloatOneMinusEpsilon;
 #endif
-#endif
+
 #define PCG32_DEFAULT_STATE 0x853c49e6748fea9bULL
 #define PCG32_DEFAULT_STREAM 0xda3e39cb94b95bdbULL
 #define PCG32_MULT 0x5851f42d4c957f2dULL
@@ -97,7 +104,7 @@ class RNG {
         state = acc_mult * state + acc_plus;
     }
     int64_t operator-(const RNG &other) const {
-        Assert(inc == other.inc);
+        CHECK_EQ(inc, other.inc);
         uint64_t cur_mult = PCG32_MULT, cur_plus = inc, cur_state = other.state,
                  the_bit = 1u, distance = 0u;
         while (state != cur_state) {
@@ -105,7 +112,7 @@ class RNG {
                 cur_state = cur_state * cur_mult + cur_plus;
                 distance |= the_bit;
             }
-            Assert((state & the_bit) == (cur_state & the_bit));
+            CHECK_EQ(state & the_bit, cur_state & the_bit);
             the_bit <<= 1;
             cur_plus = (cur_mult + 1ULL) * cur_plus;
             cur_mult *= cur_mult;
@@ -135,5 +142,7 @@ inline uint32_t RNG::UniformUInt32() {
     uint32_t rot = (uint32_t)(oldstate >> 59u);
     return (xorshifted >> rot) | (xorshifted << ((~rot + 1u) & 31));
 }
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_RNG_H

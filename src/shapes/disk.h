@@ -41,6 +41,8 @@
 // shapes/disk.h*
 #include "shape.h"
 
+namespace pbrt {
+
 // Disk Declarations
 class Disk : public Shape {
   public:
@@ -58,7 +60,7 @@ class Disk : public Shape {
                    bool testAlphaTexture) const;
     bool IntersectP(const Ray &ray, bool testAlphaTexture) const;
     Float Area() const;
-    Interaction Sample(const Point2f &u) const;
+    Interaction Sample(const Point2f &u, Float *pdf) const;
 
   private:
     // Disk Private Data
@@ -69,5 +71,7 @@ std::shared_ptr<Disk> CreateDiskShape(const Transform *o2w,
                                       const Transform *w2o,
                                       bool reverseOrientation,
                                       const ParamSet &params);
+
+}  // namespace pbrt
 
 #endif  // PBRT_SHAPES_DISK_H

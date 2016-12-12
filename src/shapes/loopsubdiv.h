@@ -41,14 +41,14 @@
 // shapes/loopsubdiv.h*
 #include "shape.h"
 
+namespace pbrt {
+
 // LoopSubdiv Declarations
-std::vector<std::shared_ptr<Shape>> LoopSubdivide(
-    const Transform *ObjectToWorld, const Transform *WorldToObject,
-    bool reverseOrientation, int nLevels, int nIndices,
-    const int *vertexIndices, int nVertices, const Point3f *p);
 std::vector<std::shared_ptr<Shape>> CreateLoopSubdiv(const Transform *o2w,
                                                      const Transform *w2o,
                                                      bool reverseOrientation,
                                                      const ParamSet &params);
+
+}  // namespace pbrt
 
 #endif  // PBRT_SHAPES_LOOPSUBDIV_H

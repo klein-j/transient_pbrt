@@ -40,8 +40,11 @@
 
 // core/medium.h*
 #include "pbrt.h"
+#include "geometry.h"
 #include "spectrum.h"
 #include <memory>
+
+namespace pbrt {
 
 // Media Declarations
 class PhaseFunction {
@@ -105,5 +108,7 @@ struct MediumInterface {
     bool IsMediumTransition() const { return inside != outside; }
     const Medium *inside, *outside;
 };
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_MEDIUM_H

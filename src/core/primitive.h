@@ -44,6 +44,8 @@
 #include "material.h"
 #include "medium.h"
 
+namespace pbrt {
+
 // Primitive Declarations
 class Primitive {
   public:
@@ -103,9 +105,9 @@ class TransformedPrimitive : public Primitive {
     void ComputeScatteringFunctions(SurfaceInteraction *isect,
                                     MemoryArena &arena, TransportMode mode,
                                     bool allowMultipleLobes) const {
-        Severe(
+        LOG(FATAL) <<
             "TransformedPrimitive::ComputeScatteringFunctions() shouldn't be "
-            "called");
+            "called";
     }
     Bounds3f WorldBound() const {
         return PrimitiveToWorld.MotionBounds(primitive->WorldBound());
@@ -127,5 +129,7 @@ class Aggregate : public Primitive {
                                     MemoryArena &arena, TransportMode mode,
                                     bool allowMultipleLobes) const;
 };
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_PRIMITIVE_H

@@ -42,6 +42,8 @@
 #include "pbrt.h"
 #include "stringprint.h"
 
+namespace pbrt {
+
 // EFloat Declarations
 class EFloat {
   public:
@@ -160,10 +162,12 @@ class EFloat {
     inline void Check() const {
         if (!std::isinf(low) && !std::isnan(low) && !std::isinf(high) &&
             !std::isnan(high))
-            Assert(low <= high);
+            CHECK_LE(low, high);
 #ifndef NDEBUG
-        if (!std::isinf(v) && !std::isnan(v))
-            Assert(LowerBound() <= vPrecise && vPrecise <= UpperBound());
+        if (!std::isinf(v) && !std::isnan(v)) {
+            CHECK_LE(LowerBound(), vPrecise);
+            CHECK_LE(vPrecise, UpperBound());
+        }
 #endif
     }
     EFloat(const EFloat &ef) {
@@ -279,5 +283,7 @@ inline bool Quadratic(EFloat A, EFloat B, EFloat C, EFloat *t0, EFloat *t1) {
     if ((float)*t0 > (float)*t1) std::swap(*t0, *t1);
     return true;
 }
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_EFLOAT_H

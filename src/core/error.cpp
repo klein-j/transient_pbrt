@@ -34,14 +34,13 @@
 #include "error.h"
 #include "stringprint.h"
 #include "progressreporter.h"
+#include <mutex>
 
 // Error Reporting Includes
 #include <stdarg.h>
 
-// Error Reporting Definitions
-#define PBRT_ERROR_IGNORE 0
-#define PBRT_ERROR_CONTINUE 1
-#define PBRT_ERROR_ABORT 2
+namespace pbrt {
+
 const char *findWordEnd(const char *buf) {
     while (*buf != '\0' && !isspace(*buf)) ++buf;
     return buf;
@@ -63,10 +62,7 @@ static std::string StringVaprintf(const std::string &fmt, va_list args) {
 }
 
 static void processError(const char *format, va_list args,
-                         const char *errorType, int disposition) {
-    // Report error
-    if (disposition == PBRT_ERROR_IGNORE) return;
-
+                         const char *errorType) {
     // Build up an entire formatted error string and print it all at once;
     // this way, if multiple threads are printing messages at once, they
     // don't get jumbled up...
@@ -80,72 +76,34 @@ static void processError(const char *format, va_list args,
         errorString += StringPrintf("(%d): ", line_num);
     }
 
-    // PBRT_ERROR_CONTINUE, PBRT_ERROR_ABORT
-    // Print formatted error message
-    int width = std::max(20, TerminalWidth() - 2);
-    errorString += errorType;
-    errorString += ": ";
-    int column = errorString.size();
+    errorString += StringVaprintf(format, args);
 
-    std::string message = StringVaprintf(format, args);
-
-    const char *msgPos = message.c_str();
-    while (true) {
-        while (*msgPos != '\0' && isspace(*msgPos)) ++msgPos;
-        if (*msgPos == '\0') break;
-
-        const char *wordEnd = findWordEnd(msgPos);
-        if (column + wordEnd - msgPos > width) {
-            errorString += "\n    ";
-            column = 4;
-        }
-        while (msgPos != wordEnd) {
-            errorString += *msgPos++;
-            ++column;
-        }
-        errorString += ' ';
-        ++column;
+    // Print the error message (but not more than one time).
+    static std::string lastError;
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (errorString != lastError) {
+        if (!strcmp(errorType, "Warning"))
+            LOG(WARNING) << errorString;
+        else
+            LOG(ERROR) << errorString;
+        lastError = errorString;
     }
-
-    fprintf(stderr, "%s\n", errorString.c_str());
-
-    if (disposition == PBRT_ERROR_ABORT) {
-#if defined(PBRT_IS_WINDOWS)
-        __debugbreak();
-#else
-        abort();
-#endif
-    }
-#if !defined(PBRT_IS_WINDOWS)
-#endif
-}
-
-void Info(const char *format, ...) {
-    if (!PbrtOptions.verbose || PbrtOptions.quiet) return;
-    va_list args;
-    va_start(args, format);
-    processError(format, args, "Notice", PBRT_ERROR_CONTINUE);
-    va_end(args);
 }
 
 void Warning(const char *format, ...) {
     if (PbrtOptions.quiet) return;
     va_list args;
     va_start(args, format);
-    processError(format, args, "Warning", PBRT_ERROR_CONTINUE);
+    processError(format, args, "Warning");
     va_end(args);
 }
 
 void Error(const char *format, ...) {
     va_list args;
     va_start(args, format);
-    processError(format, args, "Error", PBRT_ERROR_CONTINUE);
+    processError(format, args, "Error");
     va_end(args);
 }
 
-void Severe(const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    processError(format, args, "Fatal Error", PBRT_ERROR_ABORT);
-    va_end(args);
-}
+}  // namespace pbrt

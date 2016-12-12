@@ -36,6 +36,9 @@
 #include "sampling.h"
 #include "paramset.h"
 #include "efloat.h"
+#include "stats.h"
+
+namespace pbrt {
 
 // Sphere Method Definitions
 Bounds3f Sphere::ObjectBound() const {
@@ -45,6 +48,7 @@ Bounds3f Sphere::ObjectBound() const {
 
 bool Sphere::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
                        bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersect);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -152,6 +156,7 @@ bool Sphere::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
 }
 
 bool Sphere::IntersectP(const Ray &r, bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersectP);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -211,7 +216,7 @@ bool Sphere::IntersectP(const Ray &r, bool testAlphaTexture) const {
 
 Float Sphere::Area() const { return phiMax * radius * (zMax - zMin); }
 
-Interaction Sphere::Sample(const Point2f &u) const {
+Interaction Sphere::Sample(const Point2f &u, Float *pdf) const {
     Point3f pObj = Point3f(0, 0, 0) + radius * UniformSampleSphere(u);
     Interaction it;
     it.n = Normalize((*ObjectToWorld)(Normal3f(pObj.x, pObj.y, pObj.z)));
@@ -220,20 +225,36 @@ Interaction Sphere::Sample(const Point2f &u) const {
     pObj *= radius / Distance(pObj, Point3f(0, 0, 0));
     Vector3f pObjError = gamma(5) * Abs((Vector3f)pObj);
     it.p = (*ObjectToWorld)(pObj, pObjError, &it.pError);
+    *pdf = 1 / Area();
     return it;
 }
 
-Interaction Sphere::Sample(const Interaction &ref, const Point2f &u) const {
-    // Compute coordinate system for sphere sampling
+Interaction Sphere::Sample(const Interaction &ref, const Point2f &u,
+                           Float *pdf) const {
     Point3f pCenter = (*ObjectToWorld)(Point3f(0, 0, 0));
-    Vector3f wc = Normalize(pCenter - ref.p);
-    Vector3f wcX, wcY;
-    CoordinateSystem(wc, &wcX, &wcY);
 
     // Sample uniformly on sphere if $\pt{}$ is inside it
     Point3f pOrigin =
         OffsetRayOrigin(ref.p, ref.pError, ref.n, pCenter - ref.p);
-    if (DistanceSquared(pOrigin, pCenter) <= radius * radius) return Sample(u);
+    if (DistanceSquared(pOrigin, pCenter) <= radius * radius) {
+        Interaction intr = Sample(u, pdf);
+        Vector3f wi = intr.p - ref.p;
+        if (wi.LengthSquared() == 0)
+            *pdf = 0;
+        else {
+            // Convert from area measure returned by Sample() call above to
+            // solid angle measure.
+            wi = Normalize(wi);
+            *pdf *= DistanceSquared(ref.p, intr.p) / AbsDot(intr.n, -wi);
+        }
+        if (std::isinf(*pdf)) *pdf = 0.f;
+        return intr;
+    }
+
+    // Compute coordinate system for sphere sampling
+    Vector3f wc = Normalize(pCenter - ref.p);
+    Vector3f wcX, wcY;
+    CoordinateSystem(wc, &wcX, &wcY);
 
     // Sample sphere uniformly inside subtended cone
 
@@ -253,19 +274,20 @@ Interaction Sphere::Sample(const Interaction &ref, const Point2f &u) const {
     Float sinAlpha = std::sqrt(std::max((Float)0, 1 - cosAlpha * cosAlpha));
 
     // Compute surface normal and sampled point on sphere
-    Vector3f nObj =
+    Vector3f nWorld =
         SphericalDirection(sinAlpha, cosAlpha, phi, -wcX, -wcY, -wc);
-    Point3f pObj = radius * Point3f(nObj.x, nObj.y, nObj.z);
+    Point3f pWorld = pCenter + radius * Point3f(nWorld.x, nWorld.y, nWorld.z);
 
     // Return _Interaction_ for sampled point on sphere
     Interaction it;
-
-    // Reproject _pObj_ to sphere surface and compute _pObjError_
-    pObj *= radius / Distance(pObj, Point3f(0, 0, 0));
-    Vector3f pObjError = gamma(5) * Abs((Vector3f)pObj);
-    it.p = (*ObjectToWorld)(pObj, pObjError, &it.pError);
-    it.n = (*ObjectToWorld)(Normal3f(nObj));
+    it.p = pWorld;
+    it.pError = gamma(5) * Abs((Vector3f)pWorld);
+    it.n = Normal3f(nWorld);
     if (reverseOrientation) it.n *= -1;
+
+    // Uniform cone PDF.
+    *pdf = 1 / (2 * Pi * (1 - cosThetaMax));
+
     return it;
 }
 
@@ -283,6 +305,15 @@ Float Sphere::Pdf(const Interaction &ref, const Vector3f &wi) const {
     return UniformConePdf(cosThetaMax);
 }
 
+Float Sphere::SolidAngle(const Point3f &p, int nSamples) const {
+    Point3f pCenter = (*ObjectToWorld)(Point3f(0, 0, 0));
+    if (DistanceSquared(p, pCenter) <= radius * radius)
+        return 4 * Pi;
+    Float sinTheta2 = radius * radius / DistanceSquared(p, pCenter);
+    Float cosTheta = std::sqrt(std::max((Float)0, 1 - sinTheta2));
+    return (2 * Pi * (1 - cosTheta));
+}
+
 std::shared_ptr<Shape> CreateSphereShape(const Transform *o2w,
                                          const Transform *w2o,
                                          bool reverseOrientation,
@@ -294,3 +325,5 @@ std::shared_ptr<Shape> CreateSphereShape(const Transform *o2w,
     return std::make_shared<Sphere>(o2w, w2o, reverseOrientation, radius, zmin,
                                     zmax, phimax);
 }
+
+}  // namespace pbrt

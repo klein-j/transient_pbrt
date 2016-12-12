@@ -36,11 +36,15 @@
 #include "scene.h"
 #include "paramset.h"
 #include "sampling.h"
+#include "stats.h"
+
+namespace pbrt {
 
 // PointLight Method Definitions
 Spectrum PointLight::Sample_Li(const Interaction &ref, const Point2f &u,
                                Vector3f *wi, Float *pdf,
                                VisibilityTester *vis) const {
+    ProfilePhase _(Prof::LightSample);
     *wi = Normalize(pLight - ref.p);
     *pdf = 1.f;
     *vis =
@@ -57,6 +61,7 @@ Float PointLight::Pdf_Li(const Interaction &, const Vector3f &) const {
 Spectrum PointLight::Sample_Le(const Point2f &u1, const Point2f &u2, Float time,
                                Ray *ray, Normal3f *nLight, Float *pdfPos,
                                Float *pdfDir) const {
+    ProfilePhase _(Prof::LightSample);
     *ray = Ray(pLight, UniformSampleSphere(u1), Infinity, time,
                mediumInterface.inside);
     *nLight = (Normal3f)ray->d;
@@ -67,6 +72,7 @@ Spectrum PointLight::Sample_Le(const Point2f &u1, const Point2f &u2, Float time,
 
 void PointLight::Pdf_Le(const Ray &, const Normal3f &, Float *pdfPos,
                         Float *pdfDir) const {
+    ProfilePhase _(Prof::LightPdf);
     *pdfPos = 0;
     *pdfDir = UniformSpherePdf();
 }
@@ -80,3 +86,5 @@ std::shared_ptr<PointLight> CreatePointLight(const Transform &light2world,
     Transform l2w = Translate(Vector3f(P.x, P.y, P.z)) * light2world;
     return std::make_shared<PointLight>(l2w, medium, I * sc);
 }
+
+}  // namespace pbrt

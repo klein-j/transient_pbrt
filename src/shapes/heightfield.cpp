@@ -36,6 +36,8 @@
 #include "shapes/triangle.h"
 #include "paramset.h"
 
+namespace pbrt {
+
 // Heightfield Definitions
 std::vector<std::shared_ptr<Shape>> CreateHeightfield(
     const Transform *ObjectToWorld, const Transform *WorldToObject,
@@ -44,8 +46,8 @@ std::vector<std::shared_ptr<Shape>> CreateHeightfield(
     int ny = params.FindOneInt("nv", -1);
     int nitems;
     const Float *z = params.FindFloat("Pz", &nitems);
-    Assert(nitems == nx * ny);
-    Assert(nx != -1 && ny != -1 && z != nullptr);
+    CHECK_EQ(nitems, nx * ny);
+    CHECK(nx != -1 && ny != -1 && z != nullptr);
 
     int ntris = 2 * (nx - 1) * (ny - 1);
     std::unique_ptr<int[]> indices(new int[3 * ntris]);
@@ -83,3 +85,5 @@ std::vector<std::shared_ptr<Shape>> CreateHeightfield(
                               ntris, indices.get(), nverts, P.get(), nullptr,
                               nullptr, uvs.get(), nullptr, nullptr);
 }
+
+}  // namespace pbrt

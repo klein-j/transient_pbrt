@@ -39,14 +39,22 @@
 #define PBRT_INTEGRATORS_BDPT_H
 
 // integrators/bdpt.h*
-#include "pbrt.h"
+#include <unordered_map>
+#include "camera.h"
 #include "integrator.h"
 #include "interaction.h"
 #include "light.h"
-#include "scene.h"
+#include "pbrt.h"
 #include "reflection.h"
-#include "camera.h"
 #include "sampling.h"
+#include "scene.h"
+
+namespace pbrt {
+
+/// Forward declaration (correction term for adjoint BSDF with shading normals)
+extern Float CorrectShadingNormal(const SurfaceInteraction &isect,
+                                  const Vector3f &wo, const Vector3f &wi,
+                                  TransportMode mode);
 
 // EndpointInteraction Declarations
 struct EndpointInteraction : Interaction {
@@ -102,14 +110,16 @@ class ScopedAssignment {
     Type *target, backup;
 };
 
-inline Float InfiniteLightDensity(const Scene &scene,
-                                  const Distribution1D &lightDistr,
-                                  const Vector3f &w) {
+inline Float InfiniteLightDensity(
+    const Scene &scene, const Distribution1D &lightDistr,
+    const std::unordered_map<const Light *, size_t> &lightToDistrIndex,
+    const Vector3f &w) {
     Float pdf = 0;
-    for (size_t i = 0; i < scene.lights.size(); ++i)
-        if (scene.lights[i]->flags & (int)LightFlags::Infinite)
-            pdf +=
-                scene.lights[i]->Pdf_Li(Interaction(), -w) * lightDistr.func[i];
+    for (const auto &light : scene.infiniteLights) {
+        CHECK(lightToDistrIndex.find(light.get()) != lightToDistrIndex.end());
+        size_t index = lightToDistrIndex.find(light.get())->second;
+        pdf += light->Pdf_Li(Interaction(), -w) * lightDistr.func[index];
+    }
     return pdf / (lightDistr.funcInt * lightDistr.Count());
 }
 
@@ -120,13 +130,15 @@ class BDPTIntegrator : public Integrator {
     BDPTIntegrator(std::shared_ptr<Sampler> sampler,
                    std::shared_ptr<const Camera> camera, int maxDepth,
                    bool visualizeStrategies, bool visualizeWeights,
-                   const Bounds2i &pixelBounds)
+                   const Bounds2i &pixelBounds,
+                   const std::string &lightSampleStrategy = "power")
         : sampler(sampler),
           camera(camera),
           maxDepth(maxDepth),
           visualizeStrategies(visualizeStrategies),
           visualizeWeights(visualizeWeights),
-          pixelBounds(pixelBounds) {}
+          pixelBounds(pixelBounds),
+          lightSampleStrategy(lightSampleStrategy) {}
     void Render(const Scene &scene);
 
   private:
@@ -137,6 +149,7 @@ class BDPTIntegrator : public Integrator {
     const bool visualizeStrategies;
     const bool visualizeWeights;
     const Bounds2i pixelBounds;
+    const std::string lightSampleStrategy;
 };
 
 struct Vertex {
@@ -208,17 +221,18 @@ struct Vertex {
             return GetInteraction().n;
     }
     bool IsOnSurface() const { return ng() != Normal3f(); }
-    Spectrum f(const Vertex &next) const {
+    Spectrum f(const Vertex &next, TransportMode mode) const {
         Vector3f wi = next.p() - p();
         if (wi.LengthSquared() == 0) return 0.;
         wi = Normalize(wi);
         switch (type) {
         case VertexType::Surface:
-            return si.bsdf->f(si.wo, wi);
+            return si.bsdf->f(si.wo, wi) *
+                CorrectShadingNormal(si, si.wo, wi, mode);
         case VertexType::Medium:
             return mi.phase->p(mi.wo, wi);
         default:
-            Severe("Vertex::f(): Unimplemented");
+            LOG(FATAL) << "Vertex::f(): Unimplemented";
             return Spectrum(0.f);
         }
     }
@@ -235,7 +249,7 @@ struct Vertex {
                                                    BSDF_REFLECTION |
                                                    BSDF_TRANSMISSION)) > 0;
         }
-        Severe("Unhandled vertex type in IsConnectable()");
+        LOG(FATAL) << "Unhandled vertex type in IsConnectable()";
         return false;  // NOTREACHED
     }
     bool IsLight() const {
@@ -244,7 +258,7 @@ struct Vertex {
     }
     bool IsDeltaLight() const {
         return type == VertexType::Light && ei.light &&
-               ::IsDeltaLight(ei.light->flags);
+               pbrt::IsDeltaLight(ei.light->flags);
     }
     bool IsInfiniteLight() const {
         return type == VertexType::Light &&
@@ -259,12 +273,12 @@ struct Vertex {
         if (IsInfiniteLight()) {
             // Return emitted radiance for infinite light sources
             Spectrum Le(0.f);
-            for (const auto &light : scene.lights)
+            for (const auto &light : scene.infiniteLights)
                 Le += light->Le(Ray(p(), -w));
             return Le;
         } else {
             const AreaLight *light = si.primitive->GetAreaLight();
-            Assert(light != nullptr);
+            CHECK_NOTNULL(light);
             return light->L(si, w);
         }
     }
@@ -333,7 +347,7 @@ struct Vertex {
             if (wp.LengthSquared() == 0) return 0;
             wp = Normalize(wp);
         } else
-            Assert(type == VertexType::Camera);
+            CHECK(type == VertexType::Camera);
 
         // Compute directional density depending on the vertex types
         Float pdf = 0, unused;
@@ -344,7 +358,7 @@ struct Vertex {
         else if (type == VertexType::Medium)
             pdf = mi.phase->p(wp, wn);
         else
-            Severe("Vertex::Pdf(): Unimplemented");
+            LOG(FATAL) << "Vertex::Pdf(): Unimplemented";
 
         // Return probability per unit area at vertex _next_
         return ConvertDensity(pdf, next);
@@ -362,11 +376,11 @@ struct Vertex {
             pdf = 1 / (Pi * worldRadius * worldRadius);
         } else {
             // Get pointer _light_ to the light source at the vertex
-            Assert(IsLight());
+            CHECK(IsLight());
             const Light *light = type == VertexType::Light
                                      ? ei.light
                                      : si.primitive->GetAreaLight();
-            Assert(light != nullptr);
+            CHECK_NOTNULL(light);
 
             // Compute sampling density for non-infinite light sources
             Float pdfPos, pdfDir;
@@ -377,32 +391,32 @@ struct Vertex {
         return pdf;
     }
     Float PdfLightOrigin(const Scene &scene, const Vertex &v,
-                         const Distribution1D &lightDistr) const {
+                         const Distribution1D &lightDistr,
+                         const std::unordered_map<const Light *, size_t>
+                             &lightToDistrIndex) const {
         Vector3f w = v.p() - p();
         if (w.LengthSquared() == 0) return 0.;
         w = Normalize(w);
         if (IsInfiniteLight()) {
             // Return solid angle density for infinite light sources
-            return InfiniteLightDensity(scene, lightDistr, w);
+            return InfiniteLightDensity(scene, lightDistr, lightToDistrIndex,
+                                        w);
         } else {
             // Return solid angle density for non-infinite light sources
             Float pdfPos, pdfDir, pdfChoice = 0;
 
             // Get pointer _light_ to the light source at the vertex
-            Assert(IsLight());
+            CHECK(IsLight());
             const Light *light = type == VertexType::Light
                                      ? ei.light
                                      : si.primitive->GetAreaLight();
-            Assert(light != nullptr);
+            CHECK_NOTNULL(light);
 
             // Compute the discrete probability of sampling _light_, _pdfChoice_
-            for (size_t i = 0; i < scene.lights.size(); ++i) {
-                if (scene.lights[i].get() == light) {
-                    pdfChoice = lightDistr.DiscretePDF(i);
-                    break;
-                }
-            }
-            Assert(pdfChoice != 0);
+            CHECK(lightToDistrIndex.find(light) != lightToDistrIndex.end());
+            size_t index = lightToDistrIndex.find(light)->second;
+            pdfChoice = lightDistr.DiscretePDF(index);
+
             light->Pdf_Le(Ray(p(), w, time()), ng(), &pdfPos, &pdfDir);
             return pdfPos * pdfChoice;
         }
@@ -414,14 +428,17 @@ extern int GenerateCameraSubpath(const Scene &scene, Sampler &sampler,
                                  const Camera &camera, const Point2f &pFilm,
                                  Vertex *path);
 
-extern int GenerateLightSubpath(const Scene &scene, Sampler &sampler,
-                                MemoryArena &arena, int maxDepth, Float time,
-                                const Distribution1D &lightDistr, Vertex *path);
-Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
-                     Vertex *cameraVertices, int s, int t,
-                     const Distribution1D &lightDistr, const Camera &camera,
-                     Sampler &sampler, Point2f *pRaster,
-                     Float *misWeight = nullptr);
+extern int GenerateLightSubpath(
+    const Scene &scene, Sampler &sampler, MemoryArena &arena, int maxDepth,
+    Float time, const Distribution1D &lightDistr,
+    const std::unordered_map<const Light *, size_t> &lightToIndex,
+    Vertex *path);
+Spectrum ConnectBDPT(
+    const Scene &scene, Vertex *lightVertices, Vertex *cameraVertices, int s,
+    int t, const Distribution1D &lightDistr,
+    const std::unordered_map<const Light *, size_t> &lightToIndex,
+    const Camera &camera, Sampler &sampler, Point2f *pRaster,
+    Float *misWeight = nullptr);
 BDPTIntegrator *CreateBDPTIntegrator(const ParamSet &params,
                                      std::shared_ptr<Sampler> sampler,
                                      std::shared_ptr<const Camera> camera);
@@ -467,5 +484,7 @@ inline Vertex Vertex::CreateLight(const EndpointInteraction &ei,
     v.pdfFwd = pdf;
     return v;
 }
+
+}  // namespace pbrt
 
 #endif  // PBRT_INTEGRATORS_BDPT_H

@@ -45,6 +45,8 @@
 #include <string>
 #include <functional>
 
+namespace pbrt {
+
 // Statistics Declarations
 class StatsAccumulator;
 class StatRegisterer {
@@ -63,6 +65,7 @@ class StatRegisterer {
 };
 
 void PrintStats(FILE *dest);
+void ClearStats();
 void ReportThreadStats();
 
 class StatsAccumulator {
@@ -112,11 +115,9 @@ class StatsAccumulator {
         ratios[name].first += num;
         ratios[name].second += denom;
     }
-    void ReportTimer(const std::string &name, int64_t val) {
-        timers[name] += val;
-    }
 
     void Print(FILE *file);
+    void Clear();
 
   private:
     // StatsAccumulator Private Data
@@ -132,56 +133,123 @@ class StatsAccumulator {
     std::map<std::string, double> floatDistributionMaxs;
     std::map<std::string, std::pair<int64_t, int64_t>> percentages;
     std::map<std::string, std::pair<int64_t, int64_t>> ratios;
-    std::map<std::string, int64_t> timers;
 };
 
 enum class Prof {
+    SceneConstruction,
+    AccelConstruction,
+    TextureLoading,
+    MIPMapCreation,
+
     IntegratorRender,
     SamplerIntegratorLi,
+    SPPMCameraPass,
+    SPPMGridConstruction,
+    SPPMPhotonPass,
+    SPPMStatsUpdate,
+    BDPTGenerateSubpath,
+    BDPTConnectSubpaths,
+    LightDistribLookup,
+    LightDistribLookupL2,
+    LightDistribCreation,
     DirectLighting,
+    BSDFEvaluation,
+    BSDFSampling,
+    BSDFPdf,
+    BSSRDFEvaluation,
+    BSSRDFSampling,
+    PhaseFuncEvaluation,
+    PhaseFuncSampling,
     AccelIntersect,
     AccelIntersectP,
+    LightSample,
+    LightPdf,
+    MediumSample,
+    MediumTr,
     TriIntersect,
-    // Remainder of _Prof_ _enum_ entries
     TriIntersectP,
+    CurveIntersect,
+    CurveIntersectP,
+    ShapeIntersect,
+    ShapeIntersectP,
     ComputeScatteringFuncs,
     GenerateCameraRay,
-    BSDFEvaluation,
-    BSSRDFEvaluation,
     MergeFilmTile,
     SplatFilm,
+    AddFilmSample,
     StartPixel,
+    GetSample,
     TexFiltTrilerp,
     TexFiltEWA,
-    NumProfEvents
+    NumProfCategories
 };
 
+static_assert((int)Prof::NumProfCategories <= 64,
+              "No more than 64 profiling categories may be defined.");
+
+inline uint64_t ProfToBits(Prof p) { return 1ull << (int)p; }
+
 static const char *ProfNames[] = {
+    "Scene parsing and creation",
+    "Acceleration structure creation",
+    "Texture loading",
+    "MIP map generation",
+
     "Integrator::Render()",
     "SamplerIntegrator::Li()",
+    "SPPM camera pass",
+    "SPPM grid construction",
+    "SPPM photon pass",
+    "SPPM photon statistics update",
+    "BDPT subpath generation",
+    "BDPT subpath connections",
+    "SpatialLightDistribution lookup",
+    "SpatialLightDistribution global lookup",
+    "SpatialLightDistribution creation",
     "Direct lighting",
+    "BSDF::f()",
+    "BSDF::Sample_f()",
+    "BSDF::PDF()",
+    "BSSRDF::f()",
+    "BSSRDF::Sample_f()",
+    "PhaseFunction::p()",
+    "PhaseFunction::Sample_p()",
     "Accelerator::Intersect()",
     "Accelerator::IntersectP()",
+    "Light::Sample_*()",
+    "Light::Pdf()",
+    "Medium::Sample()",
+    "Medium::Tr()",
     "Triangle::Intersect()",
     "Triangle::IntersectP()",
+    "Curve::Intersect()",
+    "Curve::IntersectP()",
+    "Other Shape::Intersect()",
+    "Other Shape::IntersectP()",
     "Material::ComputeScatteringFunctions()",
     "Camera::GenerateRay[Differential]()",
-    "BSDF::f()",
-    "BSSRDF::f()",
     "Film::MergeTile()",
     "Film::AddSplat()",
+    "Film::AddSample()",
     "Sampler::StartPixelSample()",
+    "Sampler::GetSample[12]D()",
     "MIPMap::Lookup() (trilinear)",
     "MIPMap::Lookup() (EWA)",
 };
 
-extern PBRT_THREAD_LOCAL uint32_t ProfilerState;
-inline uint32_t CurrentProfilerState() { return ProfilerState; }
+static_assert((int)Prof::NumProfCategories ==
+                  sizeof(ProfNames) / sizeof(ProfNames[0]),
+              "ProfNames[] array and Prof enumerant have different "
+              "numbers of entries!");
+
+extern PBRT_THREAD_LOCAL uint64_t ProfilerState;
+inline uint64_t CurrentProfilerState() { return ProfilerState; }
+
 class ProfilePhase {
   public:
     // ProfilePhase Public Methods
     ProfilePhase(Prof p) {
-        categoryBit = (1 << (int)p);
+        categoryBit = ProfToBits(p);
         reset = (ProfilerState & categoryBit) == 0;
         ProfilerState |= categoryBit;
     }
@@ -194,11 +262,16 @@ class ProfilePhase {
   private:
     // ProfilePhase Private Data
     bool reset;
-    uint32_t categoryBit;
+    uint64_t categoryBit;
 };
 
 void InitProfiler();
+void SuspendProfiler();
+void ResumeProfiler();
+void ProfilerWorkerThreadInit();
 void ReportProfilerResults(FILE *dest);
+void ClearProfiler();
+void CleanupProfiler();
 
 // Statistics Macros
 #define STAT_COUNTER(title, var)                           \
@@ -283,30 +356,6 @@ void ReportProfilerResults(FILE *dest);
     }                                                         \
     static StatRegisterer STATS_REG##numVar(STATS_FUNC##numVar)
 
-class StatTimer {
-  public:
-    StatTimer(uint64_t *sns) {
-        sumNS = sns;
-        startTime = std::chrono::high_resolution_clock::now();
-    };
-    ~StatTimer() {
-        time_point endTime = std::chrono::high_resolution_clock::now();
-        *sumNS += std::chrono::duration_cast<std::chrono::nanoseconds>(
-                      endTime - startTime)
-                      .count();
-    }
-
-    typedef std::chrono::high_resolution_clock::time_point time_point;
-    time_point startTime;
-    uint64_t *sumNS;
-};
-
-#define STAT_TIMER(title, var)                             \
-    static PBRT_THREAD_LOCAL uint64_t var;                 \
-    static void STATS_FUNC##var(StatsAccumulator &accum) { \
-        accum.ReportTimer(title, var);                     \
-        var = 0;                                           \
-    }                                                      \
-    static StatRegisterer STATS_REG##var(STATS_FUNC##var)
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_STATS_H

@@ -41,7 +41,10 @@
 // core/progressreporter.h*
 #include "pbrt.h"
 #include <atomic>
+#include <chrono>
 #include <thread>
+
+namespace pbrt {
 
 // ProgressReporter Declarations
 class ProgressReporter {
@@ -77,6 +80,6 @@ class ProgressReporter {
     std::thread updateThread;
 };
 
-extern int TerminalWidth();
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_PROGRESSREPORTER_H

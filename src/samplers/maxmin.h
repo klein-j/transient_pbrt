@@ -42,6 +42,8 @@
 #include "sampler.h"
 #include "lowdiscrepancy.h"
 
+namespace pbrt {
+
 // MaxMinDistSampler Declarations
 class MaxMinDistSampler : public PixelSampler {
   public:
@@ -70,8 +72,8 @@ class MaxMinDistSampler : public PixelSampler {
               return spp;
           }(samplesPerPixel), nSampledDimensions) {
         int Cindex = Log2Int(samplesPerPixel);
-        Assert(Cindex >= 0 &&
-               Cindex < (sizeof(CMaxMinDist) / sizeof(CMaxMinDist[0])));
+        CHECK(Cindex >= 0 &&
+              Cindex < (sizeof(CMaxMinDist) / sizeof(CMaxMinDist[0])));
         CPixel = CMaxMinDist[Cindex];
     }
 
@@ -81,5 +83,7 @@ class MaxMinDistSampler : public PixelSampler {
 };
 
 MaxMinDistSampler *CreateMaxMinDistSampler(const ParamSet &params);
+
+}  // namespace pbrt
 
 #endif  // PBRT_SAMPLERS_MAXMIN_H

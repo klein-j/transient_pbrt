@@ -39,6 +39,9 @@
 #include "parallel.h"
 #include "progressreporter.h"
 #include "stats.h"
+
+namespace pbrt {
+
 STAT_COUNTER("Intersections/Regular ray intersection tests",
              nIntersectionTests);
 STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
@@ -46,11 +49,13 @@ STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 // Scene Method Definitions
 bool Scene::Intersect(const Ray &ray, SurfaceInteraction *isect) const {
     ++nIntersectionTests;
+    DCHECK_NE(ray.d, Vector3f(0,0,0));
     return aggregate->Intersect(ray, isect);
 }
 
 bool Scene::IntersectP(const Ray &ray) const {
     ++nShadowTests;
+    DCHECK_NE(ray.d, Vector3f(0,0,0));
     return aggregate->IntersectP(ray);
 }
 
@@ -68,3 +73,5 @@ bool Scene::IntersectTr(Ray ray, Sampler &sampler, SurfaceInteraction *isect,
         ray = isect->SpawnRay(ray.d);
     }
 }
+
+}  // namespace pbrt

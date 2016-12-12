@@ -40,6 +40,8 @@
 
 // shapes/curve.h*
 #include "shape.h"
+
+namespace pbrt {
 struct CurveCommon;
 
 // CurveType Declarations
@@ -71,7 +73,7 @@ class Curve : public Shape {
     bool Intersect(const Ray &ray, Float *tHit, SurfaceInteraction *isect,
                    bool testAlphaTexture) const;
     Float Area() const;
-    Interaction Sample(const Point2f &u) const;
+    Interaction Sample(const Point2f &u, Float *pdf) const;
 
   private:
     // Curve Private Methods
@@ -89,5 +91,7 @@ std::vector<std::shared_ptr<Shape>> CreateCurveShape(const Transform *o2w,
                                                      const Transform *w2o,
                                                      bool reverseOrientation,
                                                      const ParamSet &params);
+
+}  // namespace pbrt
 
 #endif  // PBRT_SHAPES_CURVE_H

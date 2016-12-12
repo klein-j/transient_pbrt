@@ -42,6 +42,9 @@
 #include "shape.h"
 #include "stats.h"
 #include <map>
+
+namespace pbrt {
+
 STAT_MEMORY_COUNTER("Memory/Triangle meshes", triMeshBytes);
 
 // Triangle Declarations
@@ -76,10 +79,16 @@ class Triangle : public Shape {
     Bounds3f ObjectBound() const;
     Bounds3f WorldBound() const;
     bool Intersect(const Ray &ray, Float *tHit, SurfaceInteraction *isect,
-                   bool testAlphaTexture) const;
-    bool IntersectP(const Ray &ray, bool testAlphaTexture) const;
+                   bool testAlphaTexture = true) const;
+    bool IntersectP(const Ray &ray, bool testAlphaTexture = true) const;
     Float Area() const;
-    Interaction Sample(const Point2f &u) const;
+
+    using Shape::Sample;  // Bring in the other Sample() overload.
+    Interaction Sample(const Point2f &u, Float *pdf) const;
+
+    // Returns the solid angle subtended by the triangle w.r.t. the given
+    // reference point p.
+    Float SolidAngle(const Point3f &p, int nSamples = 0) const;
 
   private:
     // Triangle Private Methods
@@ -115,5 +124,7 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
 bool WritePlyFile(const std::string &filename, int nTriangles,
                   const int *vertexIndices, int nVertices, const Point3f *P,
                   const Vector3f *S, const Normal3f *N, const Point2f *UV);
+
+}  // namespace pbrt
 
 #endif  // PBRT_SHAPES_TRIANGLE_H

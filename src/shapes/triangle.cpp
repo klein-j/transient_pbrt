@@ -38,6 +38,10 @@
 #include "sampling.h"
 #include "efloat.h"
 #include "ext/rply.h"
+#include <array>
+
+namespace pbrt {
+
 STAT_PERCENT("Intersections/Ray-triangle intersection tests", nHits, nTests);
 
 // Triangle Local Definitions
@@ -284,14 +288,15 @@ bool Triangle::Intersect(const Ray &ray, Float *tHit, SurfaceInteraction *isect,
     Vector2f duv02 = uv[0] - uv[2], duv12 = uv[1] - uv[2];
     Vector3f dp02 = p0 - p2, dp12 = p1 - p2;
     Float determinant = duv02[0] * duv12[1] - duv02[1] * duv12[0];
-    if (determinant == 0) {
-        // Handle zero determinant for triangle partial derivative matrix
-        CoordinateSystem(Normalize(Cross(p2 - p0, p1 - p0)), &dpdu, &dpdv);
-    } else {
+    bool degenerateUV = std::abs(determinant) < 1e-8;
+    if (!degenerateUV) {
         Float invdet = 1 / determinant;
         dpdu = (duv12[1] * dp02 - duv02[1] * dp12) * invdet;
         dpdv = (-duv12[0] * dp02 + duv02[0] * dp12) * invdet;
     }
+    if (degenerateUV || Cross(dpdu, dpdv).LengthSquared() == 0)
+        // Handle zero determinant for triangle partial derivative matrix
+        CoordinateSystem(Normalize(Cross(p2 - p0, p1 - p0)), &dpdu, &dpdv);
 
     // Compute error bounds for triangle intersection
     Float xAbsSum =
@@ -363,7 +368,8 @@ bool Triangle::Intersect(const Ray &ray, Float *tHit, SurfaceInteraction *isect,
             Normal3f dn1 = mesh->n[v[0]] - mesh->n[v[2]];
             Normal3f dn2 = mesh->n[v[1]] - mesh->n[v[2]];
             Float determinant = duv02[0] * duv12[1] - duv02[1] * duv12[0];
-            if (determinant == 0)
+            bool degenerateUV = std::abs(determinant) < 1e-8;
+            if (degenerateUV)
                 dndu = dndv = Normal3f(0, 0, 0);
             else {
                 Float invDet = 1 / determinant;
@@ -500,14 +506,15 @@ bool Triangle::IntersectP(const Ray &ray, bool testAlphaTexture) const {
         Vector2f duv02 = uv[0] - uv[2], duv12 = uv[1] - uv[2];
         Vector3f dp02 = p0 - p2, dp12 = p1 - p2;
         Float determinant = duv02[0] * duv12[1] - duv02[1] * duv12[0];
-        if (determinant == 0) {
-            // Handle zero determinant for triangle partial derivative matrix
-            CoordinateSystem(Normalize(Cross(p2 - p0, p1 - p0)), &dpdu, &dpdv);
-        } else {
+        bool degenerateUV = std::abs(determinant) < 1e-8;
+        if (!degenerateUV) {
             Float invdet = 1 / determinant;
             dpdu = (duv12[1] * dp02 - duv02[1] * dp12) * invdet;
             dpdv = (-duv12[0] * dp02 + duv02[0] * dp12) * invdet;
         }
+        if (degenerateUV || Cross(dpdu, dpdv).LengthSquared() == 0)
+            // Handle zero determinant for triangle partial derivative matrix
+            CoordinateSystem(Normalize(Cross(p2 - p0, p1 - p0)), &dpdu, &dpdv);
 
         // Interpolate $(u,v)$ parametric coordinates and hit point
         Point3f pHit = b0 * p0 + b1 * p1 + b2 * p2;
@@ -533,7 +540,7 @@ Float Triangle::Area() const {
     return 0.5 * Cross(p1 - p0, p2 - p0).Length();
 }
 
-Interaction Triangle::Sample(const Point2f &u) const {
+Interaction Triangle::Sample(const Point2f &u, Float *pdf) const {
     Point2f b = UniformSampleTriangle(u);
     // Get triangle vertices in _p0_, _p1_, and _p2_
     const Point3f &p0 = mesh->p[v[0]];
@@ -542,18 +549,60 @@ Interaction Triangle::Sample(const Point2f &u) const {
     Interaction it;
     it.p = b[0] * p0 + b[1] * p1 + (1 - b[0] - b[1]) * p2;
     // Compute surface normal for sampled point on triangle
-    if (mesh->n)
-        it.n = Normalize(b[0] * mesh->n[v[0]] + b[1] * mesh->n[v[1]] +
-                         (1 - b[0] - b[1]) * mesh->n[v[2]]);
-    else
-        it.n = Normalize(Normal3f(Cross(p1 - p0, p2 - p0)));
-    if (reverseOrientation) it.n *= -1;
+    it.n = Normalize(Normal3f(Cross(p1 - p0, p2 - p0)));
+    // Ensure correct orientation of the geometric normal; follow the same
+    // approach as was used in Triangle::Intersect().
+    if (mesh->n) {
+        Normal3f ns(b[0] * mesh->n[v[0]] + b[1] * mesh->n[v[1]] +
+                    (1 - b[0] - b[1]) * mesh->n[v[2]]);
+        it.n = Faceforward(it.n, ns);
+    } else if (reverseOrientation ^ transformSwapsHandedness)
+        it.n *= -1;
 
     // Compute error bounds for sampled point on triangle
     Point3f pAbsSum =
         Abs(b[0] * p0) + Abs(b[1] * p1) + Abs((1 - b[0] - b[1]) * p2);
     it.pError = gamma(6) * Vector3f(pAbsSum.x, pAbsSum.y, pAbsSum.z);
+    *pdf = 1 / Area();
     return it;
+}
+
+Float Triangle::SolidAngle(const Point3f &p, int nSamples) const {
+    // Project the vertices into the unit sphere around p.
+    std::array<Vector3f, 3> pSphere = {
+        Normalize(mesh->p[v[0]] - p), Normalize(mesh->p[v[1]] - p),
+        Normalize(mesh->p[v[2]] - p)
+    };
+
+    // http://math.stackexchange.com/questions/9819/area-of-a-spherical-triangle
+    // Girard's theorem: surface area of a spherical triangle on a unit
+    // sphere is the 'excess angle' alpha+beta+gamma-pi, where
+    // alpha/beta/gamma are the interior angles at the vertices.
+    //
+    // Given three vertices on the sphere, a, b, c, then we can compute,
+    // for example, the angle c->a->b by
+    //
+    // cos theta =  Dot(Cross(c, a), Cross(b, a)) /
+    //              (Length(Cross(c, a)) * Length(Cross(b, a))).
+    //
+    Vector3f cross01 = (Cross(pSphere[0], pSphere[1]));
+    Vector3f cross12 = (Cross(pSphere[1], pSphere[2]));
+    Vector3f cross20 = (Cross(pSphere[2], pSphere[0]));
+
+    // Some of these vectors may be degenerate. In this case, we don't want
+    // to normalize them so that we don't hit an assert. This is fine,
+    // since the corresponding dot products below will be zero.
+    if (cross01.LengthSquared() > 0) cross01 = Normalize(cross01);
+    if (cross12.LengthSquared() > 0) cross12 = Normalize(cross12);
+    if (cross20.LengthSquared() > 0) cross20 = Normalize(cross20);
+
+    // We only need to do three cross products to evaluate the angles at
+    // all three vertices, though, since we can take advantage of the fact
+    // that Cross(a, b) = -Cross(b, a).
+    return std::abs(
+        std::acos(Clamp(Dot(cross01, -cross12), -1, 1)) +
+        std::acos(Clamp(Dot(cross12, -cross20), -1, 1)) +
+        std::acos(Clamp(Dot(cross20, -cross01), -1, 1)) - Pi);
 }
 
 std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
@@ -577,12 +626,10 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
             uvs = &tempUVs[0];
         }
     }
-    bool discardDegenerateUVs =
-        params.FindOneBool("discarddegenerateUVs", false);
     if (uvs) {
         if (nuvi < npi) {
             Error(
-                "Not enough of \"uv\"s for triangle mesh.  Expencted %d, "
+                "Not enough of \"uv\"s for triangle mesh.  Expected %d, "
                 "found %d.  Discarding.",
                 npi, nuvi);
             uvs = nullptr;
@@ -610,28 +657,6 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
     if (N && nni != npi) {
         Error("Number of \"N\"s for triangle mesh must match \"P\"s");
         N = nullptr;
-    }
-    if (discardDegenerateUVs && uvs && N) {
-        // if there are normals, check for bad uv's that
-        // give degenerate mappings; discard them if so
-        const int *vp = vi;
-        for (int i = 0; i < nvi; i += 3, vp += 3) {
-            Float area =
-                .5f * Cross(P[vp[0]] - P[vp[1]], P[vp[2]] - P[vp[1]]).Length();
-            if (area < 1e-7) continue;  // ignore degenerate tris.
-            if ((uvs[vp[0]].x == uvs[vp[1]].x &&
-                 uvs[vp[0]].y == uvs[vp[1]].y) ||
-                (uvs[vp[1]].x == uvs[vp[2]].x &&
-                 uvs[vp[1]].y == uvs[vp[2]].y) ||
-                (uvs[vp[2]].x == uvs[vp[0]].x &&
-                 uvs[vp[2]].y == uvs[vp[0]].y)) {
-                Warning(
-                    "Degenerate uv coordinates in triangle mesh.  Discarding "
-                    "all uvs.");
-                uvs = nullptr;
-                break;
-            }
-        }
     }
     for (int i = 0; i < nvi; ++i)
         if (vi[i] >= npi) {
@@ -669,3 +694,5 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
     return CreateTriangleMesh(o2w, w2o, reverseOrientation, nvi / 3, vi, npi, P,
                               S, N, uvs, alphaTex, shadowAlphaTex);
 }
+
+}  // namespace pbrt

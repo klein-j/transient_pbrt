@@ -40,6 +40,8 @@
 #include <ImfRgba.h>
 #include <ImfRgbaFile.h>
 
+namespace pbrt {
+
 // ImageIO Local Declarations
 static void WriteImageEXR(const std::string &name, const Float *pixels,
                           int xRes, int yRes, int totalXRes, int totalYRes,
@@ -149,7 +151,8 @@ RGBSpectrum *ReadImageEXR(const std::string &name, int *width, int *height,
             Float frgb[3] = {pixels[i].r, pixels[i].g, pixels[i].b};
             ret[i] = RGBSpectrum::FromRGB(frgb);
         }
-        Info("Read EXR image %s (%d x %d)", name.c_str(), *width, *height);
+        LOG(INFO) << StringPrintf("Read EXR image %s (%d x %d)",
+                                  name.c_str(), *width, *height);
         return ret;
     } catch (const std::exception &e) {
         Error("Unable to read image file \"%s\": %s", name.c_str(), e.what());
@@ -206,8 +209,8 @@ void WriteImageTGA(const std::string &name, const uint8_t *pixels, int xRes,
     tga_result result;
     if ((result = tga_write_bgr(name.c_str(), outBuf.get(), xRes, yRes, 24)) !=
         TGA_NOERR)
-        Error("Unable to write output file \"%s\" (%s)", name.c_str(),
-              tga_error(result));
+        Error("Unable to write output file \"%s\" (%s)",
+              name.c_str(), tga_error(result));
 }
 
 static RGBSpectrum *ReadImageTGA(const std::string &name, int *width,
@@ -215,8 +218,8 @@ static RGBSpectrum *ReadImageTGA(const std::string &name, int *width,
     tga_image img;
     tga_result result;
     if ((result = tga_read(&img, name.c_str())) != TGA_NOERR) {
-        Error("Unable to read from TGA file \"%s\" (%s)", name.c_str(),
-              tga_error(result));
+        Error("Unable to read from TGA file \"%s\" (%s)",
+              name.c_str(), tga_error(result));
         return nullptr;
     }
 
@@ -246,7 +249,8 @@ static RGBSpectrum *ReadImageTGA(const std::string &name, int *width,
         }
 
     tga_free_buffers(&img);
-    Info("Read TGA image %s (%d x %d)", name.c_str(), *width, *height);
+    LOG(INFO) << StringPrintf("Read TGA image %s (%d x %d)",
+                              name.c_str(), *width, *height);
 
     return ret;
 }
@@ -277,6 +281,8 @@ static RGBSpectrum *ReadImagePNG(const std::string &name, int *width,
     }
 
     free(rgb);
+    LOG(INFO) << StringPrintf("Read PNG image %s (%d x %d)",
+                              name.c_str(), *width, *height);
     return ret;
 }
 
@@ -286,16 +292,26 @@ static RGBSpectrum *ReadImagePNG(const std::string &name, int *width,
  * (http://people.csail.mit.edu/jiawen/)
  */
 
-static bool hostLittleEndian =
-#if defined(__LITTLE_ENDIAN__) || defined(__i386__) || defined(__x86_64__) || \
-    defined(WIN32)
+static PBRT_CONSTEXPR bool hostLittleEndian =
+#if defined(__BYTE_ORDER__)
+  #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     true
-#elif defined(__BIG_ENDIAN__)
+  #elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     false
-#elif defined(__sparc) || defined(__sparc__)
-    false
+  #else
+    #error "__BYTE_ORDER__ defined but has unexpected value"
+  #endif
 #else
-#error "Can't detect machine endian-ness at compile-time."
+  #if defined(__LITTLE_ENDIAN__) || defined(__i386__) || defined(__x86_64__) || \
+      defined(WIN32)
+    true
+  #elif defined(__BIG_ENDIAN__)
+    false
+  #elif defined(__sparc) || defined(__sparc__)
+    false
+  #else
+    #error "Can't detect machine endian-ness at compile-time."
+  #endif
 #endif
     ;
 
@@ -305,12 +321,10 @@ static inline int isWhitespace(char c) {
     return c == ' ' || c == '\n' || c == '\t';
 }
 
-// reads a "word" from the fp and puts it into buffer
-// and adds a null terminator
-// i.e. it keeps reading until a whitespace is reached
-// returns the number of characters read
-// *not* including the whitespace
-// return -1 on an error
+// Reads a "word" from the fp and puts it into buffer and adds a null
+// terminator.  i.e. it keeps reading until whitespace is reached.  Returns
+// the number of characters read *not* including the whitespace, and
+// returns -1 on an error.
 static int readWord(FILE *fp, char *buffer, int bufferLength) {
     int n;
     int c;
@@ -408,6 +422,8 @@ static RGBSpectrum *ReadImagePFM(const std::string &filename, int *xres,
 
     delete[] data;
     fclose(fp);
+    LOG(INFO) << StringPrintf("Read PFM image %s (%d x %d)",
+                              filename.c_str(), *xres, *yres);
     return rgb;
 
 fail:
@@ -464,3 +480,5 @@ fail:
     fclose(fp);
     return false;
 }
+
+}  // namespace pbrt

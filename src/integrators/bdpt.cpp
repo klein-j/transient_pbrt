@@ -30,18 +30,19 @@
 
  */
 
-
 // integrators/bdpt.cpp*
 #include "integrators/bdpt.h"
 #include "film.h"
-#include "sampler.h"
-#include "integrator.h"
-#include "stats.h"
 #include "filters/box.h"
+#include "integrator.h"
+#include "lightdistrib.h"
 #include "paramset.h"
 #include "progressreporter.h"
+#include "sampler.h"
+#include "stats.h"
 
-STAT_TIMER("Time/Rendering", renderingTime);
+namespace pbrt {
+
 STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
 STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
@@ -56,13 +57,12 @@ Float CorrectShadingNormal(const SurfaceInteraction &isect, const Vector3f &wo,
     if (mode == TransportMode::Importance) {
         Float num = AbsDot(wo, isect.shading.n) * AbsDot(wi, isect.n);
         Float denom = AbsDot(wo, isect.n) * AbsDot(wi, isect.shading.n);
-        if (denom == 0) {
-            Assert(num == 0);
-            return 0;
-        }
+        // wi is occasionally perpendicular to isect.shading.n; this is
+        // fine, but we don't want to return an infinite or NaN value in
+        // that case.
+        if (denom == 0) return 0;
         return num / denom;
-    }
-    else
+    } else
         return 1;
 }
 
@@ -71,6 +71,7 @@ int GenerateCameraSubpath(const Scene &scene, Sampler &sampler,
                           const Camera &camera, const Point2f &pFilm,
                           Vertex *path) {
     if (maxDepth == 0) return 0;
+    ProfilePhase _(Prof::BDPTGenerateSubpath);
     // Sample initial ray for camera subpath
     CameraSample cameraSample;
     cameraSample.pFilm = pFilm;
@@ -84,15 +85,20 @@ int GenerateCameraSubpath(const Scene &scene, Sampler &sampler,
     Float pdfPos, pdfDir;
     path[0] = Vertex::CreateCamera(&camera, ray, beta);
     camera.Pdf_We(ray, &pdfPos, &pdfDir);
+    VLOG(2) << "Starting camera subpath. Ray: " << ray << ", beta " << beta
+            << ", pdfPos " << pdfPos << ", pdfDir " << pdfDir;
     return RandomWalk(scene, ray, sampler, arena, beta, pdfDir, maxDepth - 1,
                       TransportMode::Radiance, path + 1) +
            1;
 }
 
-int GenerateLightSubpath(const Scene &scene, Sampler &sampler,
-                         MemoryArena &arena, int maxDepth, Float time,
-                         const Distribution1D &lightDistr, Vertex *path) {
+int GenerateLightSubpath(
+    const Scene &scene, Sampler &sampler, MemoryArena &arena, int maxDepth,
+    Float time, const Distribution1D &lightDistr,
+    const std::unordered_map<const Light *, size_t> &lightToIndex,
+    Vertex *path) {
     if (maxDepth == 0) return 0;
+    ProfilePhase _(Prof::BDPTGenerateSubpath);
     // Sample initial ray for light subpath
     Float lightPdf;
     int lightNum = lightDistr.SampleDiscrete(sampler.Get1D(), &lightPdf);
@@ -105,8 +111,11 @@ int GenerateLightSubpath(const Scene &scene, Sampler &sampler,
     if (pdfPos == 0 || pdfDir == 0 || Le.IsBlack()) return 0;
 
     // Generate first vertex on light subpath and start random walk
-    path[0] = Vertex::CreateLight(light.get(), ray, nLight, Le, pdfPos * lightPdf);
+    path[0] =
+        Vertex::CreateLight(light.get(), ray, nLight, Le, pdfPos * lightPdf);
     Spectrum beta = Le * AbsDot(nLight, ray.d) / (lightPdf * pdfPos * pdfDir);
+    VLOG(2) << "Starting light subpath. Ray: " << ray << ", Le " << Le <<
+        ", beta " << beta << ", pdfPos " << pdfPos << ", pdfDir " << pdfDir;
     int nVertices =
         RandomWalk(scene, ray, sampler, arena, beta, pdfDir, maxDepth - 1,
                    TransportMode::Importance, path + 1);
@@ -121,7 +130,8 @@ int GenerateLightSubpath(const Scene &scene, Sampler &sampler,
         }
 
         // Set spatial density of _path[0]_ for infinite area light
-        path[0].pdfFwd = InfiniteLightDensity(scene, lightDistr, ray.d);
+        path[0].pdfFwd =
+            InfiniteLightDensity(scene, lightDistr, lightToIndex, ray.d);
     }
     return nVertices + 1;
 }
@@ -137,6 +147,8 @@ int RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler,
         // Attempt to create the next subpath vertex in _path_
         MediumInteraction mi;
 
+        VLOG(2) << "Random walk. Bounces " << bounces << ", beta " << beta <<
+            ", pdfFwd " << pdfFwd << ", pdfRev " << pdfRev;
         // Trace a ray and sample the medium, if any
         SurfaceInteraction isect;
         bool foundIntersection = scene.Intersect(ray, &isect);
@@ -181,14 +193,18 @@ int RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler,
             BxDFType type;
             Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdfFwd,
                                               BSDF_ALL, &type);
+            VLOG(2) << "Random walk sampled dir " << wi << " f: " << f <<
+                ", pdfFwd: " << pdfFwd;
             if (f.IsBlack() || pdfFwd == 0.f) break;
             beta *= f * AbsDot(wi, isect.shading.n) / pdfFwd;
+            VLOG(2) << "Random walk beta now " << beta;
             pdfRev = isect.bsdf->Pdf(wi, wo, BSDF_ALL);
             if (type & BSDF_SPECULAR) {
                 vertex.delta = true;
                 pdfRev = pdfFwd = 0;
             }
             beta *= CorrectShadingNormal(isect, wo, wi, mode);
+            VLOG(2) << "Random walk beta after shading normal correction " << beta;
             ray = isect.SpawnRay(wi);
         }
 
@@ -211,7 +227,8 @@ Spectrum G(const Scene &scene, Sampler &sampler, const Vertex &v0,
 
 Float MISWeight(const Scene &scene, Vertex *lightVertices,
                 Vertex *cameraVertices, Vertex &sampled, int s, int t,
-                const Distribution1D &lightPdf) {
+                const Distribution1D &lightPdf,
+                const std::unordered_map<const Light *, size_t> &lightToIndex) {
     if (s + t == 2) return 1;
     Float sumRi = 0;
     // Define helper function _remap0_ that deals with Dirac delta functions
@@ -240,9 +257,9 @@ Float MISWeight(const Scene &scene, Vertex *lightVertices,
     // Update reverse density of vertex $\pt{}_{t-1}$
     ScopedAssignment<Float> a4;
     if (pt)
-        a4 = {&pt->pdfRev, s > 0
-                               ? qs->Pdf(scene, qsMinus, *pt)
-                               : pt->PdfLightOrigin(scene, *ptMinus, lightPdf)};
+        a4 = {&pt->pdfRev, s > 0 ? qs->Pdf(scene, qsMinus, *pt)
+                                 : pt->PdfLightOrigin(scene, *ptMinus, lightPdf,
+                                                      lightToIndex)};
 
     // Update reverse density of vertex $\pt{}_{t-2}$
     ScopedAssignment<Float> a5;
@@ -283,10 +300,16 @@ inline int BufferIndex(int s, int t) {
 }
 
 void BDPTIntegrator::Render(const Scene &scene) {
-    ProfilePhase p(Prof::IntegratorRender);
-    // Compute _lightDistr_ for sampling lights proportional to power
-    std::unique_ptr<Distribution1D> lightDistr =
-        ComputeLightPowerDistribution(scene);
+    std::unique_ptr<LightDistribution> lightDistribution =
+        CreateLightSampleDistribution(lightSampleStrategy, scene);
+
+    // Compute a reverse mapping from light pointers to offsets into the
+    // scene lights vector (and, equivalently, offsets into
+    // lightDistr). Added after book text was finalized; this is critical
+    // to reasonable performance with 100s+ of light sources.
+    std::unordered_map<const Light *, size_t> lightToIndex;
+    for (size_t i = 0; i < scene.lights.size(); ++i)
+        lightToIndex[scene.lights[i].get()] = i;
 
     // Partition the image into tiles
     Film *film = camera->film;
@@ -320,7 +343,6 @@ void BDPTIntegrator::Render(const Scene &scene) {
 
     // Render and write the output image to disk
     if (scene.lights.size() > 0) {
-        StatTimer timer(&renderingTime);
         ParallelFor2D([&](const Point2i tile) {
             // Render a single tile using BDPT
             MemoryArena arena;
@@ -341,15 +363,26 @@ void BDPTIntegrator::Render(const Scene &scene) {
                     // Generate a single sample using BDPT
                     Point2f pFilm = (Point2f)pPixel + tileSampler->Get2D();
 
-                    // Trace the camera and light subpaths
+                    // Trace the camera subpath
                     Vertex *cameraVertices = arena.Alloc<Vertex>(maxDepth + 2);
                     Vertex *lightVertices = arena.Alloc<Vertex>(maxDepth + 1);
                     int nCamera = GenerateCameraSubpath(
                         scene, *tileSampler, arena, maxDepth + 2, *camera,
                         pFilm, cameraVertices);
+                    // Get a distribution for sampling the light at the
+                    // start of the light subpath. Because the light path
+                    // follows multiple bounces, basing the sampling
+                    // distribution on any of the vertices of the camera
+                    // path is unlikely to be a good strategy. We use the
+                    // PowerLightDistribution by default here, which
+                    // doesn't use the point passed to it.
+                    const Distribution1D *lightDistr =
+                        lightDistribution->Lookup(cameraVertices[0].p());
+                    // Now trace the light subpath
                     int nLight = GenerateLightSubpath(
                         scene, *tileSampler, arena, maxDepth + 1,
-                        cameraVertices[0].time(), *lightDistr, lightVertices);
+                        cameraVertices[0].time(), *lightDistr, lightToIndex,
+                        lightVertices);
 
                     // Execute all BDPT connection strategies
                     Spectrum L(0.f);
@@ -365,8 +398,10 @@ void BDPTIntegrator::Render(const Scene &scene) {
                             Float misWeight = 0.f;
                             Spectrum Lpath = ConnectBDPT(
                                 scene, lightVertices, cameraVertices, s, t,
-                                *lightDistr, *camera, *tileSampler, &pFilmNew,
-                                &misWeight);
+                                *lightDistr, lightToIndex, *camera, *tileSampler,
+                                &pFilmNew, &misWeight);
+                            VLOG(2) << "Connect bdpt s: " << s <<", t: " << t <<
+                                ", Lpath: " << Lpath << ", misWeight: " << misWeight;
                             if (visualizeStrategies || visualizeWeights) {
                                 Spectrum value;
                                 if (visualizeStrategies)
@@ -382,6 +417,8 @@ void BDPTIntegrator::Render(const Scene &scene) {
                                 film->AddSplat(pFilmNew, Lpath);
                         }
                     }
+                    VLOG(2) << "Add film sample pFilm: " << pFilm << ", L: " << L <<
+                        ", (y: " << L.y() << ")";
                     filmTile->AddSample(pFilm, L);
                     arena.Reset();
                 } while (tileSampler->StartNextSample());
@@ -401,10 +438,13 @@ void BDPTIntegrator::Render(const Scene &scene) {
     }
 }
 
-Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
-                     Vertex *cameraVertices, int s, int t,
-                     const Distribution1D &lightDistr, const Camera &camera,
-                     Sampler &sampler, Point2f *pRaster, Float *misWeightPtr) {
+Spectrum ConnectBDPT(
+    const Scene &scene, Vertex *lightVertices, Vertex *cameraVertices, int s,
+    int t, const Distribution1D &lightDistr,
+    const std::unordered_map<const Light *, size_t> &lightToIndex,
+    const Camera &camera, Sampler &sampler, Point2f *pRaster,
+    Float *misWeightPtr) {
+    ProfilePhase _(Prof::BDPTConnectSubpaths);
     Spectrum L(0.f);
     // Ignore invalid connections related to infinite area lights
     if (t > 1 && s != 0 && cameraVertices[t - 1].type == VertexType::Light)
@@ -416,7 +456,7 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
         // Interpret the camera subpath as a complete path
         const Vertex &pt = cameraVertices[t - 1];
         if (pt.IsLight()) L = pt.Le(scene, cameraVertices[t - 2]) * pt.beta;
-        Assert(!L.HasNaNs());
+        DCHECK(!L.HasNaNs());
     } else if (t == 1) {
         // Sample a point on the camera and connect it to the light subpath
         const Vertex &qs = lightVertices[s - 1];
@@ -429,9 +469,9 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
             if (pdf > 0 && !Wi.IsBlack()) {
                 // Initialize dynamically sampled vertex and _L_ for $t=1$ case
                 sampled = Vertex::CreateCamera(&camera, vis.P1(), Wi / pdf);
-                L = qs.beta * qs.f(sampled) * sampled.beta;
+                L = qs.beta * qs.f(sampled, TransportMode::Importance) * sampled.beta;
                 if (qs.IsOnSurface()) L *= AbsDot(wi, qs.ns());
-                Assert(!L.HasNaNs());
+                DCHECK(!L.HasNaNs());
                 // Only check visibility after we know that the path would
                 // make a non-zero contribution.
                 if (!L.IsBlack()) L *= vis.Tr(scene, sampler);
@@ -454,8 +494,9 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
                 EndpointInteraction ei(vis.P1(), light.get());
                 sampled =
                     Vertex::CreateLight(ei, lightWeight / (pdf * lightPdf), 0);
-                sampled.pdfFwd = sampled.PdfLightOrigin(scene, pt, lightDistr);
-                L = pt.beta * pt.f(sampled) * sampled.beta;
+                sampled.pdfFwd =
+                    sampled.PdfLightOrigin(scene, pt, lightDistr, lightToIndex);
+                L = pt.beta * pt.f(sampled, TransportMode::Radiance) * sampled.beta;
                 if (pt.IsOnSurface()) L *= AbsDot(wi, pt.ns());
                 // Only check visibility if the path would carry radiance.
                 if (!L.IsBlack()) L *= vis.Tr(scene, sampler);
@@ -465,7 +506,11 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
         // Handle all other bidirectional connection cases
         const Vertex &qs = lightVertices[s - 1], &pt = cameraVertices[t - 1];
         if (qs.IsConnectible() && pt.IsConnectible()) {
-            L = qs.beta * qs.f(pt) * pt.f(qs) * pt.beta;
+            L = qs.beta * qs.f(pt, TransportMode::Importance) * pt.f(qs, TransportMode::Radiance) * pt.beta;
+            VLOG(2) << "General connect s: " << s << ", t: " << t <<
+                " qs: " << qs << ", pt: " << pt << ", qs.f(pt): " << qs.f(pt, TransportMode::Importance) <<
+                ", pt.f(qs): " << pt.f(qs, TransportMode::Radiance) << ", G: " << G(scene, sampler, qs, pt) <<
+                ", dist^2: " << DistanceSquared(qs.p(), pt.p());
             if (!L.IsBlack()) L *= G(scene, sampler, qs, pt);
         }
     }
@@ -477,8 +522,10 @@ Spectrum ConnectBDPT(const Scene &scene, Vertex *lightVertices,
     // Compute MIS weight for connection strategy
     Float misWeight =
         L.IsBlack() ? 0.f : MISWeight(scene, lightVertices, cameraVertices,
-                                      sampled, s, t, lightDistr);
-    Assert(!std::isnan(misWeight));
+                                      sampled, s, t, lightDistr, lightToIndex);
+    VLOG(2) << "MIS weight for (s,t) = (" << s << ", " << t << ") connection: "
+            << misWeight;
+    DCHECK(!std::isnan(misWeight));
     L *= misWeight;
     if (misWeightPtr) *misWeightPtr = misWeight;
     return L;
@@ -499,7 +546,7 @@ BDPTIntegrator *CreateBDPTIntegrator(const ParamSet &params,
     }
     int np;
     const int *pb = params.FindInt("pixelbounds", &np);
-    Bounds2i pixelBounds = camera->film->croppedPixelBounds;
+    Bounds2i pixelBounds = camera->film->GetSampleBounds();
     if (pb) {
         if (np != 4)
             Error("Expected four values for \"pixelbounds\" parameter. Got %d.",
@@ -512,6 +559,10 @@ BDPTIntegrator *CreateBDPTIntegrator(const ParamSet &params,
         }
     }
 
+    std::string lightStrategy = params.FindOneString("lightsamplestrategy",
+                                                     "power");
     return new BDPTIntegrator(sampler, camera, maxDepth, visualizeStrategies,
-                              visualizeWeights, pixelBounds);
+                              visualizeWeights, pixelBounds, lightStrategy);
 }
+
+}  // namespace pbrt

@@ -44,6 +44,8 @@
 #include "transform.h"
 #include "film.h"
 
+namespace pbrt {
+
 // Camera Declarations
 class Camera {
   public:
@@ -72,6 +74,12 @@ struct CameraSample {
     Point2f pLens;
     Float time;
 };
+
+inline std::ostream &operator<<(std::ostream &os, const CameraSample &cs) {
+    os << "[ pFilm: " << cs.pFilm << " , pLens: " << cs.pLens <<
+        StringPrintf(", time %f ]", cs.time);
+    return os;
+}
 
 class ProjectiveCamera : public Camera {
   public:
@@ -105,5 +113,7 @@ class ProjectiveCamera : public Camera {
     Transform ScreenToRaster, RasterToScreen;
     Float lensRadius, focalDistance;
 };
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_CAMERA_H

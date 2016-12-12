@@ -41,6 +41,8 @@
 // shapes/cylinder.h*
 #include "shape.h"
 
+namespace pbrt {
+
 // Cylinder Declarations
 class Cylinder : public Shape {
   public:
@@ -58,7 +60,7 @@ class Cylinder : public Shape {
                    bool testAlphaTexture) const;
     bool IntersectP(const Ray &ray, bool testAlphaTexture) const;
     Float Area() const;
-    Interaction Sample(const Point2f &u) const;
+    Interaction Sample(const Point2f &u, Float *pdf) const;
 
   protected:
     // Cylinder Private Data
@@ -69,5 +71,7 @@ std::shared_ptr<Cylinder> CreateCylinderShape(const Transform *o2w,
                                               const Transform *w2o,
                                               bool reverseOrientation,
                                               const ParamSet &params);
+
+}  // namespace pbrt
 
 #endif  // PBRT_SHAPES_CYLINDER_H

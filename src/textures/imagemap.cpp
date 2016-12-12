@@ -34,6 +34,9 @@
 // textures/imagemap.cpp*
 #include "textures/imagemap.h"
 #include "imageio.h"
+#include "stats.h"
+
+namespace pbrt {
 
 // ImageTexture Method Definitions
 template <typename Tmemory, typename Treturn>
@@ -56,6 +59,7 @@ MIPMap<Tmemory> *ImageTexture<Tmemory, Treturn>::GetTexture(
         return textures[texInfo].get();
 
     // Create _MIPMap_ for _filename_
+    ProfilePhase _(Prof::TextureLoading);
     Point2i resolution;
     std::unique_ptr<RGBSpectrum[]> texels = ReadImage(filename, &resolution);
     if (!texels) {
@@ -180,3 +184,5 @@ ImageTexture<RGBSpectrum, Spectrum> *CreateImageSpectrumTexture(
     return new ImageTexture<RGBSpectrum, Spectrum>(
         std::move(map), filename, trilerp, maxAniso, wrapMode, scale, gamma);
 }
+
+}  // namespace pbrt

@@ -35,6 +35,9 @@
 #include "shapes/paraboloid.h"
 #include "paramset.h"
 #include "efloat.h"
+#include "stats.h"
+
+namespace pbrt {
 
 // Paraboloid Method Definitions
 Paraboloid::Paraboloid(const Transform *o2w, const Transform *w2o, bool ro,
@@ -52,6 +55,7 @@ Bounds3f Paraboloid::ObjectBound() const {
 
 bool Paraboloid::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
                            bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersect);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -149,6 +153,7 @@ bool Paraboloid::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
 }
 
 bool Paraboloid::IntersectP(const Ray &r, bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersectP);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -203,8 +208,8 @@ Float Paraboloid::Area() const {
            (std::pow(k * zMax + 1, 1.5f) - std::pow(k * zMin + 1, 1.5f));
 }
 
-Interaction Paraboloid::Sample(const Point2f &u) const {
-    Severe("Paraboloid::Sample not implemented.");
+Interaction Paraboloid::Sample(const Point2f &u, Float *pdf) const {
+    LOG(FATAL) << "Paraboloid::Sample not implemented.";
     return Interaction();
 }
 
@@ -219,3 +224,5 @@ std::shared_ptr<Paraboloid> CreateParaboloidShape(const Transform *o2w,
     return std::make_shared<Paraboloid>(o2w, w2o, reverseOrientation, radius,
                                         zmin, zmax, phimax);
 }
+
+}  // namespace pbrt

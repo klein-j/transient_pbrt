@@ -36,6 +36,8 @@
 #include "lowdiscrepancy.h"
 #include "paramset.h"
 
+namespace pbrt {
+
 // SobolSampler Method Definitions
 int64_t SobolSampler::GetIndexForSample(int64_t sampleNum) const {
     return SobolIntervalToIndex(log2Resolution, sampleNum,
@@ -44,8 +46,9 @@ int64_t SobolSampler::GetIndexForSample(int64_t sampleNum) const {
 
 Float SobolSampler::SampleDimension(int64_t index, int dim) const {
     if (dim >= NumSobolDimensions)
-        Severe("SobolSampler can only sample up to %d dimensions! Exiting.",
-               NumSobolDimensions);
+        LOG(FATAL) << StringPrintf("SobolSampler can only sample up to %d "
+                                   "dimensions! Exiting.",
+                                   NumSobolDimensions);
     Float s = SobolSample(index, dim);
     // Remap Sobol$'$ dimensions used for pixel samples
     if (dim == 0 || dim == 1) {
@@ -65,3 +68,5 @@ SobolSampler *CreateSobolSampler(const ParamSet &params,
     if (PbrtOptions.quickRender) nsamp = 1;
     return new SobolSampler(nsamp, sampleBounds);
 }
+
+}  // namespace pbrt

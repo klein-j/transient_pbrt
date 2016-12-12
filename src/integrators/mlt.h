@@ -45,6 +45,9 @@
 #include "spectrum.h"
 #include "film.h"
 #include "rng.h"
+#include <unordered_map>
+
+namespace pbrt {
 
 // MLTSampler Declarations
 class MLTSampler : public Sampler {
@@ -117,6 +120,7 @@ class MLTIntegrator : public Integrator {
     void Render(const Scene &scene);
     Spectrum L(const Scene &scene, MemoryArena &arena,
                const std::unique_ptr<Distribution1D> &lightDistr,
+               const std::unordered_map<const Light *, size_t> &lightToIndex,
                MLTSampler &sampler, int k, Point2f *pRaster);
 
   private:
@@ -131,5 +135,7 @@ class MLTIntegrator : public Integrator {
 
 MLTIntegrator *CreateMLTIntegrator(const ParamSet &params,
                                    std::shared_ptr<const Camera> camera);
+
+}  // namespace pbrt
 
 #endif  // PBRT_INTEGRATORS_MLT_H

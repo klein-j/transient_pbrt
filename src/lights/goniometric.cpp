@@ -35,12 +35,16 @@
 #include "lights/goniometric.h"
 #include "paramset.h"
 #include "sampling.h"
+#include "stats.h"
+
+namespace pbrt {
 
 // GonioPhotometricLight Method Definitions
 Spectrum GonioPhotometricLight::Sample_Li(const Interaction &ref,
                                           const Point2f &u, Vector3f *wi,
                                           Float *pdf,
                                           VisibilityTester *vis) const {
+    ProfilePhase _(Prof::LightSample);
     *wi = Normalize(pLight - ref.p);
     *pdf = 1.f;
     *vis =
@@ -63,6 +67,7 @@ Spectrum GonioPhotometricLight::Sample_Le(const Point2f &u1, const Point2f &u2,
                                           Float time, Ray *ray,
                                           Normal3f *nLight, Float *pdfPos,
                                           Float *pdfDir) const {
+    ProfilePhase _(Prof::LightSample);
     *ray = Ray(pLight, UniformSampleSphere(u1), Infinity, time,
                mediumInterface.inside);
     *nLight = (Normal3f)ray->d;
@@ -73,6 +78,7 @@ Spectrum GonioPhotometricLight::Sample_Le(const Point2f &u1, const Point2f &u2,
 
 void GonioPhotometricLight::Pdf_Le(const Ray &, const Normal3f &, Float *pdfPos,
                                    Float *pdfDir) const {
+    ProfilePhase _(Prof::LightPdf);
     *pdfPos = 0.f;
     *pdfDir = UniformSpherePdf();
 }
@@ -86,3 +92,5 @@ std::shared_ptr<GonioPhotometricLight> CreateGoniometricLight(
     return std::make_shared<GonioPhotometricLight>(light2world, medium, I * sc,
                                                    texname);
 }
+
+}  // namespace pbrt

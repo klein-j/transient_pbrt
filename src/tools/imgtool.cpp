@@ -13,6 +13,13 @@
 #include "imageio.h"
 #include "pbrt.h"
 #include "spectrum.h"
+#include "parallel.h"
+extern "C" {
+#include "ext/ArHosekSkyModel.h"
+}
+#include <glog/logging.h>
+
+using namespace pbrt;
 
 static void usage(const char *msg = nullptr, ...) {
     if (msg) {
@@ -24,7 +31,7 @@ static void usage(const char *msg = nullptr, ...) {
     }
     fprintf(stderr, R"(usage: imgtool <command> [options] <filenames...>
 
-commands: assemble, cat, convert, diff, info
+commands: assemble, cat, convert, diff, info, makesky
 
 assemble option:
     --outflie          Output image filename.
@@ -41,9 +48,17 @@ convert options:
                        added to the original image. Default: 0.3
     --bloomswidth <w>  Width of Gaussian used to generate bloom images.
                        Default: 15
+    --despike <v>      For any pixels with a luminance value greater than <v>,
+                       replace the pixel with the median of the 3x3 neighboring
+                       pixels. Default: infinity (i.e., disabled).
     --flipy            Flip the image along the y axis
     --maxluminance <n> Luminance value mapped to white by tonemapping.
                        Default: 1
+    --preservecolors   By default, out-of-gammut colors have each component
+                       clamped to [0,1] when written to non-HDR formats. With
+                       this option enabled, such colors are scaled by their
+                       maximum component, which preserves the relative ratio
+                       between RGB components.
     --repeatpix <n>    Repeat each pixel value n times in both directions
     --scale <scale>    Scale pixel values by given amount
     --tonemap          Apply tonemapping to the image (Reinhard et al.'s
@@ -55,8 +70,121 @@ diff options:
     --outfile <name>   Filename to use for saving an image that encodes the
                        absolute value of per-pixel differences.
 
+makesky options:
+    --albedo <a>       Albedo of ground-plane (range 0-1). Default: 0.5
+    --elevation <e>    Elevation of the sun in degrees (range 0-90). Default: 10
+    --outfile <name>   Filename to store latitude-longitude environment map in.
+                       Default: "sky.exr"
+    --turbidity <t>    Atmospheric turbidity (range 1.7-10). Default: 3
+    --resolution <r>   Vertical resolution of generated environment map.
+                       (Horizontal resolution is twice this value.)
+                       Default: 2048
+
 )");
     exit(1);
+}
+
+int makesky(int argc, char *argv[]) {
+    const char *outfile = "sky.exr";
+    float albedo = 0.5;
+    float turbidity = 3.;
+    float elevation = Radians(10);
+    int resolution = 2048;
+
+    int i;
+    auto parseArg = [&]() -> std::pair<std::string, double> {
+        const char *ptr = argv[i];
+        // Skip over a leading dash or two.
+        CHECK_EQ(*ptr, '-');
+        ++ptr;
+        if (*ptr == '-') ++ptr;
+
+        // Copy the flag name to the string.
+        std::string flag;
+        while (*ptr && *ptr != '=') flag += *ptr++;
+
+        if (!*ptr && i + 1 == argc)
+            usage("missing value after %s flag", argv[i]);
+        const char *value = (*ptr == '=') ? (ptr + 1) : argv[++i];
+        return {flag, atof(value)};
+    };
+
+    for (i = 0; i < argc; ++i) {
+        if (!strcmp(argv[i], "--outfile") || !strcmp(argv[i], "-outfile")) {
+            if (i + 1 == argc)
+                usage("missing filename for %s parameter", argv[i]);
+            outfile = argv[++i];
+        } else if (!strncmp(argv[i], "--outfile=", 10)) {
+            outfile = &argv[i][10];
+        } else {
+            auto arg = parseArg();
+            if (std::get<0>(arg) == "albedo") {
+                albedo = std::get<1>(arg);
+                if (albedo < 0. || albedo > 1.)
+                    usage("--albedo must be between 0 and 1");
+            } else if (std::get<0>(arg) == "turbidity") {
+                turbidity = std::get<1>(arg);
+                if (turbidity < 1.7 || turbidity > 10.)
+                    usage("--turbidity must be between 1.7 and 10.");
+            } else if (std::get<0>(arg) == "elevation") {
+                elevation = std::get<1>(arg);
+                if (elevation < 0. || elevation > 90.)
+                    usage("--elevation must be between 0. and 90.");
+                elevation = Radians(elevation);
+            } else if (std::get<0>(arg) == "resolution") {
+                resolution = int(std::get<1>(arg));
+                if (resolution < 1) usage("--resolution must be >= 1");
+            } else
+                usage();
+        }
+    }
+
+    PBRT_CONSTEXPR int num_channels = 9;
+    // Three wavelengths around red, three around green, and three around blue.
+    double lambda[num_channels] = {630, 680, 710, 500, 530, 560, 460, 480, 490};
+
+    ArHosekSkyModelState *skymodel_state[num_channels];
+    for (int i = 0; i < num_channels; ++i) {
+        skymodel_state[i] =
+            arhosekskymodelstate_alloc_init(elevation, turbidity, albedo);
+    }
+
+    // Vector pointing at the sun. Note that elevation is measured from the
+    // horizon--not the zenith, as it is elsewhere in pbrt.
+    Vector3f sunDir(0., std::sin(elevation), std::cos(elevation));
+
+    int nTheta = resolution, nPhi = 2 * nTheta;
+    std::vector<Float> img(3 * nTheta * nPhi, 0.f);
+    ParallelInit();
+    ParallelFor([&](int64_t t) {
+        Float theta = float(t + 0.5) / nTheta * Pi;
+        if (theta > Pi / 2.) return;
+        for (int p = 0; p < nPhi; ++p) {
+            Float phi = float(p + 0.5) / nPhi * 2. * Pi;
+
+            // Vector corresponding to the direction for this pixel.
+            Vector3f v(std::cos(phi) * std::sin(theta), std::cos(theta),
+                       std::sin(phi) * std::sin(theta));
+            // Compute the angle between the pixel's direction and the sun
+            // direction.
+            Float gamma = std::acos(Clamp(Dot(v, sunDir), -1, 1));
+            CHECK(gamma >= 0 && gamma <= Pi);
+
+            for (int c = 0; c < num_channels; ++c) {
+                float val = arhosekskymodel_solar_radiance(
+                    skymodel_state[c], theta, gamma, lambda[c]);
+                // For each of red, green, and blue, average the three
+                // values for the three wavelengths for the color.
+                // TODO: do a better spectral->RGB conversion.
+                img[3 * (t * nPhi + p) + c / 3] += val / 3.f;
+            }
+        }
+    }, nTheta, 32);
+
+    WriteImage(outfile, (Float *)&img[0], Bounds2i({0, 0}, {nPhi, nTheta}),
+               {nPhi, nTheta});
+    ParallelCleanup();
+    return 0;
 }
 
 int assemble(int argc, char *argv[]) {
@@ -243,11 +371,11 @@ int diff(int argc, char *argv[]) {
     std::unique_ptr<RGBSpectrum[]> imgs[2] = {ReadImage(filename[0], &res[0]),
                                               ReadImage(filename[1], &res[1])};
     if (!imgs[0]) {
-        fprintf(stderr, "%s: unable to read image", filename[0]);
+        fprintf(stderr, "%s: unable to read image\n", filename[0]);
         return 1;
     }
     if (!imgs[1]) {
-        fprintf(stderr, "%s: unable to read image", filename[1]);
+        fprintf(stderr, "%s: unable to read image\n", filename[1]);
         return 1;
     }
     if (res[0] != res[1]) {
@@ -465,12 +593,14 @@ int convert(int argc, char *argv[]) {
     int bloomIters = 5;
     bool tonemap = false;
     Float maxY = 1.;
+    Float despikeLimit = Infinity;
+    bool preserveColors = false;
 
     int i;
     auto parseArg = [&]() -> std::pair<std::string, double> {
         const char *ptr = argv[i];
         // Skip over a leading dash or two.
-        Assert(*ptr == '-');
+        CHECK_EQ(*ptr, '-');
         ++ptr;
         if (*ptr == '-') ++ptr;
 
@@ -491,6 +621,8 @@ int convert(int argc, char *argv[]) {
             flipy = !flipy;
         else if (!strcmp(argv[i], "--tonemap") || !strcmp(argv[i], "-tonemap"))
             tonemap = !tonemap;
+        else if (!strcmp(argv[i], "--preservecolors") || !strcmp(argv[i], "-preservecolors"))
+            preserveColors = !preserveColors;
         else {
             std::pair<std::string, double> arg = parseArg();
             if (std::get<0>(arg) == "maxluminance") {
@@ -512,6 +644,8 @@ int convert(int argc, char *argv[]) {
                 bloomScale = std::get<1>(arg);
             else if (std::get<0>(arg) == "bloomiters")
                 bloomIters = int(std::get<1>(arg));
+            else if (std::get<0>(arg) == "despike")
+                despikeLimit = std::get<1>(arg);
             else
                 usage();
         }
@@ -523,15 +657,52 @@ int convert(int argc, char *argv[]) {
         usage("missing filenames for \"convert\"");
 
     const char *inFilename = argv[i], *outFilename = argv[i + 1];
-    const char *filename[2] = {argv[i], argv[i + 1]};
     Point2i res;
     std::unique_ptr<RGBSpectrum[]> image(ReadImage(inFilename, &res));
     if (!image) {
-        fprintf(stderr, "%s: unable to read image", inFilename);
+        fprintf(stderr, "%s: unable to read image\n", inFilename);
         return 1;
     }
 
     for (int i = 0; i < res.x * res.y; ++i) image[i] *= scale;
+
+    if (despikeLimit < Infinity) {
+        std::unique_ptr<RGBSpectrum[]> filteredImg(
+            new RGBSpectrum[res.x * res.y]);
+        int despikeCount = 0;
+        for (int y = 0; y < res.y; ++y) {
+            for (int x = 0; x < res.x; ++x) {
+                if (image[y * res.x + x].y() < despikeLimit) {
+                    filteredImg[y * res.x + x] = image[y * res.x + x];
+                    continue;
+                }
+
+                // Copy all of the valid neighbor pixels into neighbors[].
+                ++despikeCount;
+                int validNeighbors = 0;
+                RGBSpectrum neighbors[9];
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (y + dy < 0 || y + dy >= res.y) continue;
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (x + dx < 0 || x + dx > res.x) continue;
+                        int offset = (y + dy) * res.x + x + dx;
+                        neighbors[validNeighbors++] = image[offset];
+                    }
+                }
+
+                // Find the median of the neighbors, sorted by luminance.
+                int mid = validNeighbors / 2;
+                std::nth_element(
+                    &neighbors[0], &neighbors[mid], &neighbors[validNeighbors],
+                    [](const RGBSpectrum &a, const RGBSpectrum &b) -> bool {
+                        return a.y() < b.y();
+                    });
+                filteredImg[y * res.x + x] = neighbors[mid];
+            }
+        }
+        std::swap(image, filteredImg);
+        fprintf(stderr, "%s: despiked %d pixels\n", inFilename, despikeCount);
+    }
 
     if (bloomLevel < Infinity)
         image = bloom(std::move(image), res, bloomLevel, bloomWidth, bloomScale,
@@ -543,6 +714,20 @@ int convert(int argc, char *argv[]) {
             // Reinhard et al. photographic tone mapping operator.
             Float scale = (1 + y / (maxY * maxY)) / (1 + y);
             image[i] *= scale;
+        }
+    }
+
+    if (preserveColors) {
+        for (int i = 0; i < res.x * res.y; ++i) {
+            Float rgb[3];
+            image[i].ToRGB(rgb);
+            Float m = std::max(rgb[0], std::max(rgb[1], rgb[2]));
+            if (m > 1) {
+                rgb[0] /= m;
+                rgb[1] /= m;
+                rgb[2] /= m;
+                image[i] = Spectrum::FromRGB(rgb);
+            }
         }
     }
 
@@ -578,18 +763,23 @@ int convert(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
+    google::InitGoogleLogging(argv[0]);
+    FLAGS_stderrthreshold = 1; // Warning and above.
+
     if (argc < 2) usage();
 
     if (!strcmp(argv[1], "assemble"))
         return assemble(argc - 2, argv + 2);
+    else if (!strcmp(argv[1], "cat"))
+        return cat(argc - 2, argv + 2);
+    else if (!strcmp(argv[1], "convert"))
+        return convert(argc - 2, argv + 2);
     else if (!strcmp(argv[1], "diff"))
         return diff(argc - 2, argv + 2);
     else if (!strcmp(argv[1], "info"))
         return info(argc - 2, argv + 2);
-    else if (!strcmp(argv[1], "convert"))
-        return convert(argc - 2, argv + 2);
-    else if (!strcmp(argv[1], "cat"))
-        return cat(argc - 2, argv + 2);
+    else if (!strcmp(argv[1], "makesky"))
+        return makesky(argc - 2, argv + 2);
     else
         usage("unknown command \"%s\"", argv[1]);
 

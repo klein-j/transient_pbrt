@@ -60,6 +60,7 @@
 #endif
 #include <assert.h>
 #include <string.h>
+#include <glog/logging.h>
 
 // Platform-specific definitions
 #include <stdint.h>
@@ -73,6 +74,8 @@
 
 // Global Macros
 #define ALLOCA(TYPE, COUNT) (TYPE *) alloca((COUNT) * sizeof(TYPE))
+
+namespace pbrt {
 
 // Global Forward Declarations
 class Scene;
@@ -149,7 +152,7 @@ struct ParamSetItem;
 struct Options {
     int nThreads = 0;
     bool quickRender = false;
-    bool quiet = false, verbose = false;
+    bool quiet = false;
     bool cat = false, toPly = false;
     std::string imageFile;
 };
@@ -171,19 +174,16 @@ static PBRT_CONSTEXPR Float Infinity = std::numeric_limits<Float>::infinity();
 static PBRT_CONSTEXPR Float MachineEpsilon =
     std::numeric_limits<Float>::epsilon() * 0.5;
 #endif
-const Float ShadowEpsilon = 0.0001f;
-static const Float Pi = 3.14159265358979323846;
-static const Float InvPi = 0.31830988618379067154;
-static const Float Inv2Pi = 0.15915494309189533577;
-static const Float Inv4Pi = 0.07957747154594766788;
-static const Float PiOver2 = 1.57079632679489661923;
-static const Float PiOver4 = 0.78539816339744830961;
-static const Float Sqrt2 = 1.41421356237309504880;
+static PBRT_CONSTEXPR Float ShadowEpsilon = 0.0001f;
+static PBRT_CONSTEXPR Float Pi = 3.14159265358979323846;
+static PBRT_CONSTEXPR Float InvPi = 0.31830988618379067154;
+static PBRT_CONSTEXPR Float Inv2Pi = 0.15915494309189533577;
+static PBRT_CONSTEXPR Float Inv4Pi = 0.07957747154594766788;
+static PBRT_CONSTEXPR Float PiOver2 = 1.57079632679489661923;
+static PBRT_CONSTEXPR Float PiOver4 = 0.78539816339744830961;
+static PBRT_CONSTEXPR Float Sqrt2 = 1.41421356237309504880;
 #if defined(PBRT_IS_MSVC)
 #define alloca _alloca
-#endif
-#ifndef PBRT_L1_CACHE_LINE_SIZE
-#define PBRT_L1_CACHE_LINE_SIZE 64
 #endif
 
 // Global Inline Functions
@@ -313,8 +313,22 @@ inline int Log2Int(uint32_t v) {
 #endif
 }
 
+inline int Log2Int(int32_t v) { return Log2Int((uint32_t)v); }
+
+inline int Log2Int(uint64_t v) {
+#if defined(PBRT_IS_MSVC)
+    unsigned long lz = 0;
+    if (_BitScanReverse64(&lz, v)) return lz;
+    return 0;
+#else
+    return 63 - __builtin_clzll(v);
+#endif
+}
+
+inline int Log2Int(int64_t v) { return Log2Int((uint64_t)v); }
+
 template <typename T>
-inline bool IsPowerOf2(T v) {
+inline PBRT_CONSTEXPR bool IsPowerOf2(T v) {
     return v && !(v & (v - 1));
 }
 
@@ -366,13 +380,6 @@ int FindInterval(int size, const Predicate &pred) {
     return Clamp(first - 1, 0, size - 2);
 }
 
-#ifdef NDEBUG
-#define Assert(expr) ((void)0)
-#else
-#define Assert(expr)                                                     \
-    ((expr) ? (void)0 : Severe("Assertion \"%s\" failed in %s, line %d", \
-                               #expr, __FILE__, __LINE__))
-#endif  // NDEBUG
 inline Float Lerp(Float t, Float v1, Float v2) { return (1 - t) * v1 + t * v2; }
 
 inline bool Quadratic(Float a, Float b, Float c, Float *t0, Float *t1) {
@@ -445,5 +452,7 @@ inline Float Erf(Float x) {
 
     return sign * y;
 }
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_PBRT_H

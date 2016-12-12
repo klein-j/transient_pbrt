@@ -11,15 +11,14 @@ Pharr](http://pharr.org/matt), [Wenzel
 Jakob](http://www.mitsuba-renderer.org/~wenzel/), and Greg Humphreys.  As
 before, the code is available under the BSD license.
 
-Although the new version of the book won't be released until this Fall,
-we're making the source code available now so that interested users can
-look at the code, try out the system, and possibly help us out. (See [how
-you can help](#how-you-can-help) for more information about contributing.)
-The initial release of the source code doesn't include updated
-documentation (and the book isn't out yet!), so you should only try it out
-if you're comfortable digging into source code.
+Please see the [User's Guide](http://pbrt.org/users-guide.html) for more
+information about how to check out and build the system as well as various
+additional information about working with pbrt.
 
-Over 4GB of example scenes are available for download. (Many are new and
+Example scenes
+--------------
+
+Over 6GB of example scenes are available for download. (Many are new and
 weren't available with previous versions of pbrt.) We're trying an
 experiment and making them available via git. Run:
 ```
@@ -29,123 +28,90 @@ to get them. We will update this repository as more scenes become
 available. (See the `README.md.html file` in the scene distribution for
 more information about the scenes and preview images.)
 
-The [pbrt website](http://pbrt.org) has  general information about
+The [pbrt website](http://pbrt.org) has general information about
 both *Physically Based Rendering* as well as pbrt-v2, the previous version
 of the system.
 
-Significant Changes
--------------------
+Building pbrt
+-------------
 
-The system has seen many changes since the second edition. To figure out
-how to use the new features, you may want to look at the example scene
-files and read through the source code to figure out the parameters and
-details of the following. (Better documentation will come once everything
-is finalized.)
-
-* Bidirectional path tracing: `Integrator "bdpt"` does proper bidirectional
-  path tracing with multiple importance sampling.
-* Metropolis sampling: `Integrator "mlt"` uses the bidirectional path
-  tracer with Hachisuka et al.'s "Multiplexed Metropolis Light Transport"
-  technique.
-* Improved numerical robustness for intersection calculations: epsilons are
-  small and provably conservative. [Section
-  draft](http://pbrt.org/fp-error-section.pdf)
-* Subsurface scattering: all new implementation, integrated into the path
-  tracing integrator.  See the `scenes/head` example scene.
-* Curve shape: thin ribbons described by bicubic Bezier curves. Great for
-  hair, fur, and grass.
-* PLY mesh support: meshes in PLY format can be used directly: `Shape
-  "plymesh" "string filename" "mesh.ply"`
-  * Existing scenes with triangle meshes specified via `Shape
-    "trianglemesh"` can be converted to PLY using the `--toply` command-line
-    option, which emits a PLY mesh for each triangle mesh and prints an
-    updated scene description file to standard out.
-* Realistic camera model: tracing rays through lenses to make images! See
-  the `scenes/dragons` example scene.
-* Participating media: the boundaries of shapes are now used to delineate
-  the extent of regions of participating media in the scene.  See the
-  `scenes/medium-sphere` example scene.
-* New samplers: a much-improved Halton sampler, and an all-new Sobol'
-  sampler are both quite effective for path tracing and bidirectional path
-  tracing.
-* Fourier representation of measured materials: an implementation of Jakob
-  et al's [A Comprehensive Framework for Rendering Layered
-  Materials](http://www.cs.cornell.edu/projects/layered-sg14/). (See an
-  example in the `scenes/dragons` example scene).
-  * New versions of the BSDF files it uses can be generated with 
-    [layerlab](https://github.com/wjakob/layerlab).
-* Improved microfacet models: specular transmission through microfacets,
-  and Heitz's improved importance sampling.
-* No external dependencies: thanks to
-[Lode Vandevenne's lodepng](http://lodev.org/lodepng/),
-[Diego Nehab's rply](http://www.impa.br/~diego/software/rply),
-and [Emil Mikulic's TARGA library](http://dmr.ath.cx/gfx/targa/), no
-  external libraries need to be compiled to build pbrt.
-  The only slightly bigger dependency is [OpenEXR](http://www.openexr.com/),
-  and its build system is fully integrated with that of PBRT.
-
-Many other small things have been improved (parallelization scheme, image
-updates, statistics system, overall cleanliness of interfaces); see the
-source code for details.
-
-Building The System
--------------------
-
-First, to check out pbrt together with all dependencies, be sure to use the ``--recursive`` flag
-when cloning the repository, i.e.
+To check out pbrt together with all dependencies, be sure to use the
+`--recursive` flag when cloning the repository, i.e.
 ```bash
 $ git clone --recursive https://github.com/mmp/pbrt-v3/
 ```
 If you accidentally already cloned pbrt without this flag (or to update an
-pbrt source tree from before change ``b9aa97b1f21f36b0``, run the following
+pbrt source tree after a new submodule has been added, run the following
 command to also fetch the dependencies:
 ```bash
 $ git submodule update --init --recursive
 ```
-
 pbrt uses [cmake](http://www.cmake.org/) for its build system.  On Linux
 and OS X, cmake is available via most package management systems.  For
 Windows, or to build it from source, see the [cmake downloads
 page](http://www.cmake.org/download/).
 
 * For command-line builds on Linux and OS X, once you have cmake installed,
-create a new directory for the build, change to that directory, and run
-`cmake <path to pbrt-v3>`. A Makefile will be created in that
-current directory.  Run `make -j4`, and pbrt and some additional tools will
-be built.
-* To make an XCode project file on OS X, run `cmake -G Xcode <path to
-pbrt-v3>`.
+  create a new directory for the build, change to that directory, and run
+  `cmake [path to pbrt-v3]`. A Makefile will be created in that
+  current directory.  Run `make -j4`, and pbrt, the obj2pbrt and imgtool
+  utilities, and an executable that runs pbrt's unit tests will be built.
+* To make an XCode project file on OS X, run `cmake -G Xcode [path to pbrt-v3]`.
 * Finally, on Windows, the cmake GUI will create MSVC solution files that
-you can load in MSVC.
+  you can load in MSVC.
 
-File Format Changes
--------------------
+If you plan to edit the lexer and parser for pbrt's input files
+(`src/core/pbrtlex.ll` and `src/core/pbrtparase.y`), you'll also want to
+have [bison](https://www.gnu.org/software/bison/) and
+[flex](http://flex.sourceforge.net/) installed. On OS X, note that the
+version of flex that ships with the developer tools is extremely old and is
+unable to process `pbrtlex.ll`; you'll need to install a more recent
+version of flex in this case.
 
-We've tried to keep the scene description file format as unchanged as
-possible.  However, progress in other parts of the system required changes
-to the scene description format.
+### Debug and Release Builds ###
 
-First, the "Renderer", "SurfaceIntegrator", and "VolumeIntegrator"
-directives have all been unified under "Integrator"; only a single
-integrator now needs to be specified.
+By default, the build files that are created that will compile an optimized
+release build of pbrt. These builds give the highest performance when
+rendering, but many runtime checks are disabled in these builds and
+optimized builds are generally difficult to trace in a debugger.
 
-The following specific implementations were removed:
+To build a debug version of pbrt, set the `CMAKE_BUILD_TYPE` flag to
+`Debug` when you run cmake to create build files to make a debug build. For
+example, when running cmake from the command lne, provide it with the
+argument `-DCMAKE_BUILD_TYPE=Debug`. Then build pbrt using the resulting
+build files. (You may want to keep two build directories, one for release
+builds and one for debug builds, so that you don't need to switch back and
+forth.)
 
-* Accelerator "grid"
-  * Use "bvh" or "kdtree" instead.
-* Material "measured", "shinymetal"
-  * The new "fourier" material should now be used for measured BRDFs.
-  * Use "uber" in place of "shinymetal".
-* VolumeRegion: all
-  * Use the new participating media representation [described above](#significant-changes)
-* SurfaceIntegrator: photonmap, irradiancecache, igi, dipolesubsurface,
-  ambientocclusion, useprobes, diffuseprt, glossyprt
-  * Use "sppm" for the "photonmap".
-  * The "path" integrator now handles subsurface scattering directly.
-  * The others aren't as good as path tracing anyway. :-)
-* VolumeIntegrator: single, emission
-  * Use the "volpath" path tracing integrator.
-* Sampler: bestcandidate
-  * Use any other sampler.
-* Renderer: all
-  * Use "Integrator", as described above.
+Debug versions of the system run much more slowly than release
+builds. Therefore, in order to avoid surprisingly slow renders when
+debugging support isn't desired, debug versions of pbrt print a banner
+message indicating that they were built for debugging at startup time.
+
+### Build Configurations ###
+
+There are two configuration settings that must be set at compile time. The
+first controls whether pbrt uses 32-bit or 64-bit values for floating-point
+computation, and the second controls whether tristimulus RGB values or
+sampled spectral values are used for rendering.  (Both of these aren't
+amenable to being chosen at runtime, but must be determined at compile time
+for efficiency).
+
+To change them from their defaults (respectively, 32-bit
+and RGB.), edit the file `src/core/pbrt.h`.
+
+To select 64-bit floating point values, remove the comment symbol before
+the line:
+```
+//#define PBRT_FLOAT_AS_DOUBLE
+```
+and recompile the system.
+
+To select full-spectral rendering, comment out the first of these two
+typedefs and remove the comment from the second one:
+```
+typedef RGBSpectrum Spectrum;
+// typedef SampledSpectrum Spectrum;
+```
+Again, don't forget to recompile after making this change.
+

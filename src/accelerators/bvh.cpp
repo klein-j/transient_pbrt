@@ -36,9 +36,11 @@
 #include "interaction.h"
 #include "paramset.h"
 #include "stats.h"
+#include "parallel.h"
 #include <algorithm>
 
-STAT_TIMER("Time/BVH construction", constructionTime);
+namespace pbrt {
+
 STAT_MEMORY_COUNTER("Memory/BVH tree", treeBytes);
 STAT_RATIO("BVH/Primitives per leaf node", totalPrimitives, totalLeafNodes);
 STAT_COUNTER("BVH/Interior nodes", interiorNodes);
@@ -103,7 +105,7 @@ struct LinearBVHNode {
 
 // BVHAccel Utility Functions
 inline uint32_t LeftShift3(uint32_t x) {
-    Assert(x <= (1 << 10));
+    CHECK_LE(x, (1 << 10));
     if (x == (1 << 10)) --x;
 #ifdef PBRT_HAVE_BINARY_CONSTANTS
     x = (x | (x << 16)) & 0b00000011000000000000000011111111;
@@ -128,9 +130,9 @@ inline uint32_t LeftShift3(uint32_t x) {
 }
 
 inline uint32_t EncodeMorton3(const Vector3f &v) {
-    Assert(v.x >= 0 && v.x <= (1 << 10));
-    Assert(v.y >= 0 && v.y <= (1 << 10));
-    Assert(v.z >= 0 && v.z <= (1 << 10));
+    CHECK_GE(v.x, 0);
+    CHECK_GE(v.y, 0);
+    CHECK_GE(v.z, 0);
     return (LeftShift3(v.z) << 2) | (LeftShift3(v.y) << 1) | LeftShift3(v.x);
 }
 
@@ -138,8 +140,10 @@ static void RadixSort(std::vector<MortonPrimitive> *v) {
     std::vector<MortonPrimitive> tempVector(v->size());
     PBRT_CONSTEXPR int bitsPerPass = 6;
     PBRT_CONSTEXPR int nBits = 30;
-    Assert((nBits % bitsPerPass) == 0);
+    static_assert((nBits % bitsPerPass) == 0,
+                  "Radix sort bitsPerPass must evenly divide nBits");
     PBRT_CONSTEXPR int nPasses = nBits / bitsPerPass;
+
     for (int pass = 0; pass < nPasses; ++pass) {
         // Perform one pass of radix sort, sorting _bitsPerPass_ bits
         int lowBit = pass * bitsPerPass;
@@ -154,7 +158,8 @@ static void RadixSort(std::vector<MortonPrimitive> *v) {
         PBRT_CONSTEXPR int bitMask = (1 << bitsPerPass) - 1;
         for (const MortonPrimitive &mp : in) {
             int bucket = (mp.mortonCode >> lowBit) & bitMask;
-            Assert(bucket >= 0 && bucket < nBuckets);
+            CHECK_GE(bucket, 0);
+            CHECK_LT(bucket, nBuckets);
             ++bucketCount[bucket];
         }
 
@@ -180,7 +185,7 @@ BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Primitive>> &p,
     : maxPrimsInNode(std::min(255, maxPrimsInNode)),
       splitMethod(splitMethod),
       primitives(p) {
-    StatTimer buildTime(&constructionTime);
+    ProfilePhase _(Prof::AccelConstruction);
     if (primitives.size() == 0) return;
     // Build BVH from _primitives_
 
@@ -201,9 +206,11 @@ BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Primitive>> &p,
         root = recursiveBuild(arena, primitiveInfo, 0, primitives.size(),
                               &totalNodes, orderedPrims);
     primitives.swap(orderedPrims);
-    Info("BVH created with %d nodes for %d primitives (%.2f MB)", totalNodes,
-         (int)primitives.size(),
-         float(totalNodes * sizeof(LinearBVHNode)) / (1024.f * 1024.f));
+    LOG(INFO) << StringPrintf("BVH created with %d nodes for %d "
+                              "primitives (%.2f MB)", totalNodes,
+                              (int)primitives.size(),
+                              float(totalNodes * sizeof(LinearBVHNode)) /
+                              (1024.f * 1024.f));
 
     // Compute representation of depth-first traversal of BVH tree
     treeBytes += totalNodes * sizeof(LinearBVHNode) + sizeof(*this) +
@@ -211,7 +218,7 @@ BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Primitive>> &p,
     nodes = AllocAligned<LinearBVHNode>(totalNodes);
     int offset = 0;
     flattenBVHTree(root, &offset);
-    Assert(offset == totalNodes);
+    CHECK_EQ(totalNodes, offset);
 }
 
 Bounds3f BVHAccel::WorldBound() const {
@@ -227,7 +234,7 @@ BVHBuildNode *BVHAccel::recursiveBuild(
     MemoryArena &arena, std::vector<BVHPrimitiveInfo> &primitiveInfo, int start,
     int end, int *totalNodes,
     std::vector<std::shared_ptr<Primitive>> &orderedPrims) {
-    Assert(start != end);
+    CHECK_NE(start, end);
     BVHBuildNode *node = arena.Alloc<BVHBuildNode>();
     (*totalNodes)++;
     // Compute bounds of all primitives in BVH node
@@ -316,7 +323,8 @@ BVHBuildNode *BVHAccel::recursiveBuild(
                                 centroidBounds.Offset(
                                     primitiveInfo[i].centroid)[dim];
                         if (b == nBuckets) b = nBuckets - 1;
-                        Assert(b >= 0 && b < nBuckets);
+                        CHECK_GE(b, 0);
+                        CHECK_LT(b, nBuckets);
                         buckets[b].count++;
                         buckets[b].bounds =
                             Union(buckets[b].bounds, primitiveInfo[i].bounds);
@@ -361,7 +369,8 @@ BVHBuildNode *BVHAccel::recursiveBuild(
                                 int b = nBuckets *
                                         centroidBounds.Offset(pi.centroid)[dim];
                                 if (b == nBuckets) b = nBuckets - 1;
-                                Assert(b >= 0 && b < nBuckets);
+                                CHECK_GE(b, 0);
+                                CHECK_LT(b, nBuckets);
                                 return b <= minCostSplitBucket;
                             });
                         mid = pmid - &primitiveInfo[0];
@@ -465,7 +474,7 @@ BVHBuildNode *BVHAccel::emitLBVH(
     MortonPrimitive *mortonPrims, int nPrimitives, int *totalNodes,
     std::vector<std::shared_ptr<Primitive>> &orderedPrims,
     std::atomic<int> *orderedPrimsOffset, int bitIndex) const {
-    Assert(nPrimitives > 0);
+    CHECK_GT(nPrimitives, 0);
     if (bitIndex == -1 || nPrimitives < maxPrimsInNode) {
         // Create and return leaf node of LBVH treelet
         (*totalNodes)++;
@@ -491,21 +500,21 @@ BVHBuildNode *BVHAccel::emitLBVH(
         // Find LBVH split point for this dimension
         int searchStart = 0, searchEnd = nPrimitives - 1;
         while (searchStart + 1 != searchEnd) {
-            Assert(searchStart != searchEnd);
+            CHECK_NE(searchStart, searchEnd);
             int mid = (searchStart + searchEnd) / 2;
             if ((mortonPrims[searchStart].mortonCode & mask) ==
                 (mortonPrims[mid].mortonCode & mask))
                 searchStart = mid;
             else {
-                Assert((mortonPrims[mid].mortonCode & mask) ==
-                       (mortonPrims[searchEnd].mortonCode & mask));
+                CHECK_EQ(mortonPrims[mid].mortonCode & mask,
+                         mortonPrims[searchEnd].mortonCode & mask);
                 searchEnd = mid;
             }
         }
         int splitOffset = searchEnd;
-        Assert(splitOffset <= nPrimitives - 1);
-        Assert((mortonPrims[splitOffset - 1].mortonCode & mask) !=
-               (mortonPrims[splitOffset].mortonCode & mask));
+        CHECK_LE(splitOffset, nPrimitives - 1);
+        CHECK_NE(mortonPrims[splitOffset - 1].mortonCode & mask,
+                 mortonPrims[splitOffset].mortonCode & mask);
 
         // Create and return interior LBVH node
         (*totalNodes)++;
@@ -527,7 +536,7 @@ BVHBuildNode *BVHAccel::buildUpperSAH(MemoryArena &arena,
                                       std::vector<BVHBuildNode *> &treeletRoots,
                                       int start, int end,
                                       int *totalNodes) const {
-    Assert(start < end);
+    CHECK_LT(start, end);
     int nNodes = end - start;
     if (nNodes == 1) return treeletRoots[start];
     (*totalNodes)++;
@@ -549,7 +558,7 @@ BVHBuildNode *BVHAccel::buildUpperSAH(MemoryArena &arena,
     int dim = centroidBounds.MaximumExtent();
     // FIXME: if this hits, what do we need to do?
     // Make sure the SAH split below does something... ?
-    Assert(centroidBounds.pMax[dim] != centroidBounds.pMin[dim]);
+    CHECK_NE(centroidBounds.pMax[dim], centroidBounds.pMin[dim]);
 
     // Allocate _BucketInfo_ for SAH partition buckets
     PBRT_CONSTEXPR int nBuckets = 12;
@@ -568,7 +577,8 @@ BVHBuildNode *BVHAccel::buildUpperSAH(MemoryArena &arena,
             nBuckets * ((centroid - centroidBounds.pMin[dim]) /
                         (centroidBounds.pMax[dim] - centroidBounds.pMin[dim]));
         if (b == nBuckets) b = nBuckets - 1;
-        Assert(b >= 0 && b < nBuckets);
+        CHECK_GE(b, 0);
+        CHECK_LT(b, nBuckets);
         buckets[b].count++;
         buckets[b].bounds = Union(buckets[b].bounds, treeletRoots[i]->bounds);
     }
@@ -611,11 +621,13 @@ BVHBuildNode *BVHAccel::buildUpperSAH(MemoryArena &arena,
                     ((centroid - centroidBounds.pMin[dim]) /
                      (centroidBounds.pMax[dim] - centroidBounds.pMin[dim]));
             if (b == nBuckets) b = nBuckets - 1;
-            Assert(b >= 0 && b < nBuckets);
+            CHECK_GE(b, 0);
+            CHECK_LT(b, nBuckets);
             return b <= minCostSplitBucket;
         });
     int mid = pmid - &treeletRoots[0];
-    Assert(mid > start && mid < end);
+    CHECK_GT(mid, start);
+    CHECK_LT(mid, end);
     node->InitInterior(
         dim, this->buildUpperSAH(arena, treeletRoots, start, mid, totalNodes),
         this->buildUpperSAH(arena, treeletRoots, mid, end, totalNodes));
@@ -627,8 +639,8 @@ int BVHAccel::flattenBVHTree(BVHBuildNode *node, int *offset) {
     linearNode->bounds = node->bounds;
     int myOffset = (*offset)++;
     if (node->nPrimitives > 0) {
-        Assert(!node->children[0] && !node->children[1]);
-        Assert(node->nPrimitives < 65536);
+        CHECK(!node->children[0] && !node->children[1]);
+        CHECK_LT(node->nPrimitives, 65536);
         linearNode->primitivesOffset = node->firstPrimOffset;
         linearNode->nPrimitives = node->nPrimitives;
     } else {
@@ -743,3 +755,5 @@ std::shared_ptr<BVHAccel> CreateBVHAccelerator(
     int maxPrimsInNode = ps.FindOneInt("maxnodeprims", 4);
     return std::make_shared<BVHAccel>(prims, maxPrimsInNode, splitMethod);
 }
+
+}  // namespace pbrt

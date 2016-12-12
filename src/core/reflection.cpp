@@ -41,6 +41,8 @@
 #include "stats.h"
 #include <stdarg.h>
 
+namespace pbrt {
+
 // BxDF Utility Functions
 Float FrDielectric(Float cosThetaI, Float etaI, Float etaT) {
     cosThetaI = Clamp(cosThetaI, -1, 1);
@@ -101,6 +103,10 @@ Spectrum ScaledBxDF::Sample_f(const Vector3f &wo, Vector3f *wi,
                               BxDFType *sampledType) const {
     Spectrum f = bxdf->Sample_f(wo, wi, sample, pdf, sampledType);
     return scale * f;
+}
+
+Float ScaledBxDF::Pdf(const Vector3f &wo, const Vector3f &wi) const {
+    return bxdf->Pdf(wo, wi);
 }
 
 std::string ScaledBxDF::ToString() const {
@@ -568,6 +574,17 @@ Spectrum FourierBSDF::Sample_f(const Vector3f &wo, Vector3f *wi,
     *wi = -Vector3f(norm * (cosPhi * wo.x - sinPhi * wo.y),
                     norm * (sinPhi * wo.x + cosPhi * wo.y), muI);
 
+    // Mathematically, wi will be normalized (if wo was). However, in
+    // practice, floating-point rounding error can cause some error to
+    // accumulate in the computed value of wi here. This can be
+    // catastrophic: if the ray intersects an object with the FourierBSDF
+    // again and the wo (based on such a wi) is nearly perpendicular to the
+    // surface, then the wi computed at the next intersection can end up
+    // being substantially (like 4x) longer than normalized, which leads to
+    // all sorts of errors, including negative spectral values. Therefore,
+    // we normalize again here.
+    *wi = Normalize(*wi);
+
     // Evaluate remaining Fourier expansions for angle $\phi$
     Float scale = muI != 0 ? (1 / std::abs(muI)) : (Float)0;
     if (mode == TransportMode::Radiance && muI * muO > 0) {
@@ -687,7 +704,7 @@ Spectrum BSDF::rho(const Vector3f &wo, int nSamples, const Point2f *samples,
 Spectrum BSDF::Sample_f(const Vector3f &woWorld, Vector3f *wiWorld,
                         const Point2f &u, Float *pdf, BxDFType type,
                         BxDFType *sampledType) const {
-    ProfilePhase pp(Prof::BSDFEvaluation);
+    ProfilePhase pp(Prof::BSDFSampling);
     // Choose which _BxDF_ to sample
     int matchingComps = NumComponents(type);
     if (matchingComps == 0) {
@@ -706,7 +723,9 @@ Spectrum BSDF::Sample_f(const Vector3f &woWorld, Vector3f *wiWorld,
             bxdf = bxdfs[i];
             break;
         }
-    Assert(bxdf);
+    CHECK_NOTNULL(bxdf);
+    VLOG(2) << "BSDF::Sample_f chose comp = " << comp << " / matching = " <<
+        matchingComps << ", bxdf: " << bxdf->ToString();
 
     // Remap _BxDF_ sample _u_ to $[0,1)^2$
     Point2f uRemapped(std::min(u[0] * matchingComps - comp, OneMinusEpsilon),
@@ -718,6 +737,9 @@ Spectrum BSDF::Sample_f(const Vector3f &woWorld, Vector3f *wiWorld,
     *pdf = 0;
     if (sampledType) *sampledType = bxdf->type;
     Spectrum f = bxdf->Sample_f(wo, &wi, uRemapped, pdf, sampledType);
+    VLOG(2) << "For wo = " << wo << ", sampled f = " << f << ", pdf = "
+            << *pdf << ", ratio = " << ((*pdf > 0) ? (f / *pdf) : Spectrum(0.))
+            << ", wi = " << wi;
     if (*pdf == 0) {
         if (sampledType) *sampledType = BxDFType(0);
         return 0;
@@ -741,11 +763,14 @@ Spectrum BSDF::Sample_f(const Vector3f &woWorld, Vector3f *wiWorld,
                  (!reflect && (bxdfs[i]->type & BSDF_TRANSMISSION))))
                 f += bxdfs[i]->f(wo, wi);
     }
+    VLOG(2) << "Overall f = " << f << ", pdf = " << *pdf << ", ratio = "
+            << ((*pdf > 0) ? (f / *pdf) : Spectrum(0.));
     return f;
 }
 
 Float BSDF::Pdf(const Vector3f &woWorld, const Vector3f &wiWorld,
                 BxDFType flags) const {
+    ProfilePhase pp(Prof::BSDFPdf);
     if (nBxDFs == 0.f) return 0.f;
     Vector3f wo = WorldToLocal(woWorld), wi = WorldToLocal(wiWorld);
     if (wo.z == 0) return 0.;
@@ -766,3 +791,5 @@ std::string BSDF::ToString() const {
         s += StringPrintf("\n  bxdfs[%d]: ", i) + bxdfs[i]->ToString();
     return s + std::string(" ]");
 }
+
+}  // namespace pbrt

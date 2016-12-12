@@ -35,6 +35,9 @@
 #include "shapes/cone.h"
 #include "paramset.h"
 #include "efloat.h"
+#include "stats.h"
+
+namespace pbrt {
 
 // Cone Method Definitions
 Cone::Cone(const Transform *o2w, const Transform *w2o, bool ro, Float height,
@@ -51,6 +54,7 @@ Bounds3f Cone::ObjectBound() const {
 
 bool Cone::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
                      bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersect);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -144,6 +148,7 @@ bool Cone::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
 }
 
 bool Cone::IntersectP(const Ray &r, bool testAlphaTexture) const {
+    ProfilePhase p(Prof::ShapeIntersectP);
     Float phi;
     Point3f pHit;
     // Transform _Ray_ to object space
@@ -197,8 +202,8 @@ Float Cone::Area() const {
            2;
 }
 
-Interaction Cone::Sample(const Point2f &u) const {
-    Severe("Cone::Sample not implemented.");
+Interaction Cone::Sample(const Point2f &u, Float *pdf) const {
+    LOG(FATAL) << "Cone::Sample not implemented.";
     return Interaction();
 }
 
@@ -212,3 +217,5 @@ std::shared_ptr<Cone> CreateConeShape(const Transform *o2w,
     return std::make_shared<Cone>(o2w, w2o, reverseOrientation, height, radius,
                                   phimax);
 }
+
+}  // namespace pbrt

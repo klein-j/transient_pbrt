@@ -39,6 +39,8 @@
 #include "film.h"
 #include "stats.h"
 
+namespace pbrt {
+
 // DirectLightingIntegrator Method Definitions
 void DirectLightingIntegrator::Preprocess(const Scene &scene,
                                           Sampler &sampler) {
@@ -112,7 +114,7 @@ DirectLightingIntegrator *CreateDirectLightingIntegrator(
     }
     int np;
     const int *pb = params.FindInt("pixelbounds", &np);
-    Bounds2i pixelBounds = camera->film->croppedPixelBounds;
+    Bounds2i pixelBounds = camera->film->GetSampleBounds();
     if (pb) {
         if (np != 4)
             Error("Expected four values for \"pixelbounds\" parameter. Got %d.",
@@ -127,3 +129,5 @@ DirectLightingIntegrator *CreateDirectLightingIntegrator(
     return new DirectLightingIntegrator(strategy, maxDepth, camera, sampler,
                                         pixelBounds);
 }
+
+}  // namespace pbrt

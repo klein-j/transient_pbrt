@@ -35,8 +35,14 @@
 #include "shapes/curve.h"
 #include "paramset.h"
 #include "stats.h"
+
+namespace pbrt {
+
 STAT_MEMORY_COUNTER("Memory/Curves", curveBytes);
 STAT_PERCENT("Intersections/Ray-curve intersection tests", nHits, nTests);
+STAT_INT_DISTRIBUTION("Intersections/Curve refinement level", refinementLevel);
+STAT_COUNTER("Scene/Curves", nCurves);
+STAT_COUNTER("Scene/Split curves", nSplitCurves);
 
 // Curve Utility Functions
 static Point3f BlossomBezier(const Point3f p[4], Float u0, Float u1, Float u2) {
@@ -79,6 +85,7 @@ CurveCommon::CurveCommon(const Point3f c[4], Float width0, Float width1,
         normalAngle = std::acos(Clamp(Dot(n[0], n[1]), 0, 1));
         invSinNormalAngle = 1 / std::sin(normalAngle);
     }
+    ++nCurves;
 }
 
 std::vector<std::shared_ptr<Shape>> CreateCurve(
@@ -95,6 +102,7 @@ std::vector<std::shared_ptr<Shape>> CreateCurve(
         Float uMax = (i + 1) / (Float)nSegments;
         segments.push_back(std::make_shared<Curve>(o2w, w2o, reverseOrientation,
                                                    common, uMin, uMax));
+        ++nSplitCurves;
     }
     curveBytes += sizeof(CurveCommon) + nSegments * sizeof(Curve);
     return segments;
@@ -116,6 +124,7 @@ Bounds3f Curve::ObjectBound() const {
 
 bool Curve::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
                       bool testAlphaTexture) const {
+    ProfilePhase p(isect ? Prof::CurveIntersect : Prof::CurveIntersectP);
     ++nTests;
     // Transform _Ray_ to object space
     Vector3f oErr, dErr;
@@ -129,11 +138,56 @@ bool Curve::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
     cpObj[3] = BlossomBezier(common->cpObj, uMax, uMax, uMax);
 
     // Project curve control points to plane perpendicular to ray
-    Vector3f dx, dy;
-    CoordinateSystem(ray.d, &dx, &dy);
+
+    // Be careful to set the "up" direction passed to LookAt() to equal the
+    // vector from the first to the last control points.  In turn, this
+    // helps orient the curve to be roughly parallel to the x axis in the
+    // ray coordinate system.
+    //
+    // In turn (especially for curves that are approaching stright lines),
+    // we get curve bounds with minimal extent in y, which in turn lets us
+    // early out more quickly in recursiveIntersect().
+    Vector3f dx = Cross(ray.d, cpObj[3] - cpObj[0]);
+    if (dx.LengthSquared() == 0) {
+        // If the ray and the vector between the first and last control
+        // points are parallel, dx will be zero.  Generate an arbitrary xy
+        // orientation for the ray coordinate system so that intersection
+        // tests can proceeed in this unusual case.
+        Vector3f dy;
+        CoordinateSystem(ray.d, &dx, &dy);
+    }
+
     Transform objectToRay = LookAt(ray.o, ray.o + ray.d, dx);
     Point3f cp[4] = {objectToRay(cpObj[0]), objectToRay(cpObj[1]),
                      objectToRay(cpObj[2]), objectToRay(cpObj[3])};
+
+    // Before going any further, see if the ray's bounding box intersects
+    // the curve's bounding box. We start with the y dimension, since the y
+    // extent is generally the smallest (and is often tiny) due to our
+    // careful orientation of the ray coordinate ysstem above.
+    Float maxWidth = std::max(Lerp(uMin, common->width[0], common->width[1]),
+                              Lerp(uMax, common->width[0], common->width[1]));
+    if (std::max(std::max(cp[0].y, cp[1].y), std::max(cp[2].y, cp[3].y)) +
+            0.5f * maxWidth < 0 ||
+        std::min(std::min(cp[0].y, cp[1].y), std::min(cp[2].y, cp[3].y)) -
+            0.5f * maxWidth > 0)
+        return false;
+
+    // Check for non-overlap in x.
+    if (std::max(std::max(cp[0].x, cp[1].x), std::max(cp[2].x, cp[3].x)) +
+            0.5f * maxWidth < 0 ||
+        std::min(std::min(cp[0].x, cp[1].x), std::min(cp[2].x, cp[3].x)) -
+            0.5f * maxWidth > 0)
+        return false;
+
+    // Check for non-overlap in z.
+    Float rayLength = ray.d.Length();
+    Float zMax = rayLength * ray.tMax;
+    if (std::max(std::max(cp[0].z, cp[1].z), std::max(cp[2].z, cp[3].z)) +
+            0.5f * maxWidth < 0 ||
+        std::min(std::min(cp[0].z, cp[1].z), std::min(cp[2].z, cp[3].z)) -
+            0.5f * maxWidth > zMax)
+        return false;
 
     // Compute refinement depth for curve, _maxDepth_
     Float L0 = 0;
@@ -143,13 +197,22 @@ bool Curve::Intersect(const Ray &r, Float *tHit, SurfaceInteraction *isect,
                     std::max(std::abs(cp[i].x - 2 * cp[i + 1].x + cp[i + 2].x),
                              std::abs(cp[i].y - 2 * cp[i + 1].y + cp[i + 2].y)),
                     std::abs(cp[i].z - 2 * cp[i + 1].z + cp[i + 2].z)));
+
     Float eps =
         std::max(common->width[0], common->width[1]) * .05f;  // width / 20
-#define LOG4(x) (std::log(x) * 0.7213475108f)
-    Float fr0 = LOG4(1.41421356237f * 12.f * L0 / (8.f * eps));
-#undef LOG4
-    int r0 = (int)std::round(fr0);
+    auto Log2 = [](Float v) -> int {
+        if (v < 1) return 0;
+        uint32_t bits = FloatToBits(v);
+        // https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
+        // (With an additional add so get round-to-nearest rather than
+        // round down.)
+        return (bits >> 23) - 127 + (bits & (1 << 22) ? 1 : 0);
+    };
+    // Compute log base 4 by dividing log2 in half.
+    int r0 = Log2(1.41421356237f * 6.f * L0 / (8.f * eps)) / 2;
     int maxDepth = Clamp(r0, 0, 10);
+    ReportValue(refinementLevel, maxDepth);
+
     return recursiveIntersect(ray, tHit, isect, cp, Inverse(objectToRay), uMin,
                               uMax, maxDepth);
 }
@@ -158,29 +221,59 @@ bool Curve::recursiveIntersect(const Ray &ray, Float *tHit,
                                SurfaceInteraction *isect, const Point3f cp[4],
                                const Transform &rayToObject, Float u0, Float u1,
                                int depth) const {
-    // Try to cull curve segment versus ray
-
-    // Compute bounding box of curve segment, _curveBounds_
-    Bounds3f curveBounds =
-        Union(Bounds3f(cp[0], cp[1]), Bounds3f(cp[2], cp[3]));
-    Float maxWidth = std::max(Lerp(u0, common->width[0], common->width[1]),
-                              Lerp(u1, common->width[0], common->width[1]));
-    curveBounds = Expand(curveBounds, 0.5 * maxWidth);
-
-    // Compute bounding box of ray, _rayBounds_
     Float rayLength = ray.d.Length();
-    Float zMax = rayLength * ray.tMax;
-    Bounds3f rayBounds(Point3f(0, 0, 0), Point3f(0, 0, zMax));
-    if (Overlaps(curveBounds, rayBounds) == false) return false;
+
     if (depth > 0) {
         // Split curve segment into sub-segments and test for intersection
-        Float uMid = 0.5f * (u0 + u1);
         Point3f cpSplit[7];
         SubdivideBezier(cp, cpSplit);
-        return (recursiveIntersect(ray, tHit, isect, &cpSplit[0], rayToObject,
-                                   u0, uMid, depth - 1) ||
-                recursiveIntersect(ray, tHit, isect, &cpSplit[3], rayToObject,
-                                   uMid, u1, depth - 1));
+
+        // For each of the two segments, see if the ray's bounding box
+        // overlaps the segment before recursively checking for
+        // intersection with it.
+        bool hit = false;
+        Float u[3] = {u0, (u0 + u1) / 2.f, u1};
+        // Pointer to the 4 control poitns for the current segment.
+        const Point3f *cps = cpSplit;
+        for (int seg = 0; seg < 2; ++seg, cps += 3) {
+            Float maxWidth =
+                std::max(Lerp(u[seg], common->width[0], common->width[1]),
+                         Lerp(u[seg + 1], common->width[0], common->width[1]));
+
+            // As above, check y first, since it most commonly lets us exit
+            // out early.
+            if (std::max(std::max(cps[0].y, cps[1].y),
+                         std::max(cps[2].y, cps[3].y)) +
+                        0.5 * maxWidth < 0 ||
+                std::min(std::min(cps[0].y, cps[1].y),
+                         std::min(cps[2].y, cps[3].y)) -
+                        0.5 * maxWidth > 0)
+                continue;
+
+            if (std::max(std::max(cps[0].x, cps[1].x),
+                         std::max(cps[2].x, cps[3].x)) +
+                        0.5 * maxWidth < 0 ||
+                std::min(std::min(cps[0].x, cps[1].x),
+                         std::min(cps[2].x, cps[3].x)) -
+                        0.5 * maxWidth > 0)
+                continue;
+
+            Float zMax = rayLength * ray.tMax;
+            if (std::max(std::max(cps[0].z, cps[1].z),
+                         std::max(cps[2].z, cps[3].z)) +
+                        0.5 * maxWidth < 0 ||
+                std::min(std::min(cps[0].z, cps[1].z),
+                         std::min(cps[2].z, cps[3].z)) -
+                        0.5 * maxWidth > zMax)
+                continue;
+
+            hit |= recursiveIntersect(ray, tHit, isect, cps, rayToObject,
+                                      u[seg], u[seg + 1], depth - 1);
+            // If we found an intersection and this is a shadow ray,
+            // we can exit out immediately.
+            if (hit && !tHit) return true;
+        }
+        return hit;
     } else {
         // Intersect ray with curve segment
 
@@ -220,6 +313,7 @@ bool Curve::recursiveIntersect(const Ray &ray, Float *tHit,
         Point3f pc = EvalBezier(cp, Clamp(w, 0, 1), &dpcdw);
         Float ptCurveDist2 = pc.x * pc.x + pc.y * pc.y;
         if (ptCurveDist2 > hitWidth * hitWidth * .25) return false;
+        Float zMax = rayLength * ray.tMax;
         if (pc.z < 0 || pc.z > zMax) return false;
 
         // Compute $v$ coordinate of curve intersection point
@@ -279,8 +373,8 @@ Float Curve::Area() const {
     return approxLength * avgWidth;
 }
 
-Interaction Curve::Sample(const Point2f &u) const {
-    Severe("Curve::Sample not implemented.");
+Interaction Curve::Sample(const Point2f &u, Float *pdf) const {
+    LOG(FATAL) << "Curve::Sample not implemented.";
     return Interaction();
 }
 
@@ -330,7 +424,7 @@ std::vector<std::shared_ptr<Shape>> CreateCurveShape(const Transform *o2w,
         }
     }
 
-    int sd = params.FindOneFloat("splitdepth", 2);
+    int sd = params.FindOneFloat("splitdepth", 3);
 
     if (type == CurveType::Ribbon && !n) {
         Error(
@@ -341,3 +435,5 @@ std::vector<std::shared_ptr<Shape>> CreateCurveShape(const Transform *o2w,
         return CreateCurve(o2w, w2o, reverseOrientation, cp, width0, width1,
                            type, n, sd);
 }
+
+}  // namespace pbrt

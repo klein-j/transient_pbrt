@@ -37,6 +37,9 @@
 #include "paramset.h"
 #include <set>
 #include <map>
+
+namespace pbrt {
+
 struct SDFace;
 struct SDVertex;
 
@@ -72,7 +75,7 @@ struct SDFace {
     int vnum(SDVertex *vert) const {
         for (int i = 0; i < 3; ++i)
             if (v[i] == vert) return i;
-        Severe("Basic logic error in SDFace::vnum()");
+        LOG(FATAL) << "Basic logic error in SDFace::vnum()";
         return -1;
     }
     SDFace *nextFace(SDVertex *vert) { return f[vnum(vert)]; }
@@ -82,7 +85,7 @@ struct SDFace {
     SDVertex *otherVert(SDVertex *v0, SDVertex *v1) {
         for (int i = 0; i < 3; ++i)
             if (v[i] != v0 && v[i] != v1) return v[i];
-        Severe("Basic logic error in SDVertex::otherVert()");
+        LOG(FATAL) << "Basic logic error in SDVertex::otherVert()";
         return nullptr;
     }
     SDVertex *v[3];
@@ -143,7 +146,7 @@ inline Float loopGamma(int valence) {
 }
 
 // LoopSubdiv Function Definitions
-std::vector<std::shared_ptr<Shape>> LoopSubdivide(
+static std::vector<std::shared_ptr<Shape>> LoopSubdivide(
     const Transform *ObjectToWorld, const Transform *WorldToObject,
     bool reverseOrientation, int nLevels, int nIndices,
     const int *vertexIndices, int nVertices, const Point3f *p) {
@@ -400,7 +403,8 @@ std::vector<std::shared_ptr<Shape>> CreateLoopSubdiv(const Transform *o2w,
                                                      const Transform *w2o,
                                                      bool reverseOrientation,
                                                      const ParamSet &params) {
-    int nLevels = params.FindOneInt("nlevels", 3);
+    int nLevels = params.FindOneInt("levels",
+                                    params.FindOneInt("nlevels", 3));
     int nps, nIndices;
     const int *vertexIndices = params.FindInt("indices", &nIndices);
     const Point3f *P = params.FindPoint3f("P", &nps);
@@ -459,3 +463,5 @@ static Point3f weightBoundary(SDVertex *vert, Float beta) {
     p += beta * pRing[valence - 1];
     return p;
 }
+
+}  // namespace pbrt

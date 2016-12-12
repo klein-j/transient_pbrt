@@ -44,6 +44,8 @@
 #include "rng.h"
 #include <inttypes.h>
 
+namespace pbrt {
+
 // Sampler Declarations
 class Sampler {
   public:
@@ -62,6 +64,10 @@ class Sampler {
     virtual bool StartNextSample();
     virtual std::unique_ptr<Sampler> Clone(int seed) = 0;
     virtual bool SetSampleNumber(int64_t sampleNum);
+    std::string StateString() const {
+      return StringPrintf("(%d,%d), sample %" PRId64, currentPixel.x,
+                          currentPixel.y, currentPixelSampleIndex);
+    }
     int64_t CurrentSampleNumber() const { return currentPixelSampleIndex; }
 
     // Sampler Public Data
@@ -116,5 +122,7 @@ class GlobalSampler : public Sampler {
     static const int arrayStartDim = 5;
     int arrayEndDim;
 };
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_SAMPLER_H

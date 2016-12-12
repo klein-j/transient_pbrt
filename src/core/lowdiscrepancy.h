@@ -44,6 +44,8 @@
 #include "sampling.h"
 #include "sobolmatrices.h"
 
+namespace pbrt {
+
 // Low Discrepancy Declarations
 Float RadicalInverse(int baseIndex, uint64_t a);
 std::vector<uint16_t> ComputeRadicalInversePermutations(RNG &rng);
@@ -98,9 +100,11 @@ inline uint32_t MultiplyGenerator(const uint32_t *C, uint32_t a) {
 inline Float SampleGeneratorMatrix(const uint32_t *C, uint32_t a,
                                    uint32_t scramble = 0) {
 #ifndef PBRT_HAVE_HEX_FP_CONSTANTS
-    return (MultiplyGenerator(C, a) ^ scramble) * 2.3283064365386963e-10f;
+    return std::min((MultiplyGenerator(C, a) ^ scramble) * 2.3283064365386963e-10f,
+                    OneMinusEpsilon);
 #else
-    return (MultiplyGenerator(C, a) ^ scramble) * 0x1p-32f;
+    return std::min((MultiplyGenerator(C, a) ^ scramble) * 0x1p-32f,
+                    OneMinusEpsilon);
 #endif
 }
 
@@ -111,9 +115,11 @@ inline void GrayCodeSample(const uint32_t *C, uint32_t n, uint32_t scramble,
     uint32_t v = scramble;
     for (uint32_t i = 0; i < n; ++i) {
 #ifndef PBRT_HAVE_HEX_FP_CONSTANTS
-        p[i] = v * 2.3283064365386963e-10f; /* 1/2^32 */
+        p[i] = std::min(v * 2.3283064365386963e-10f /* 1/2^32 */,
+                        OneMinusEpsilon);
 #else
-        p[i] = v * 0x1p-32f; /* 1/2^32 */
+        p[i] = std::min(v * 0x1p-32f /* 1/2^32 */,
+                        OneMinusEpsilon);
 #endif
         v ^= C[CountTrailingZeros(i + 1)];
     }
@@ -124,11 +130,11 @@ inline void GrayCodeSample(const uint32_t *C0, const uint32_t *C1, uint32_t n,
     uint32_t v[2] = {(uint32_t)scramble.x, (uint32_t)scramble.y};
     for (uint32_t i = 0; i < n; ++i) {
 #ifndef PBRT_HAVE_HEX_FP_CONSTANTS
-        p[i].x = v[0] * 2.3283064365386963e-10f;
-        p[i].y = v[1] * 2.3283064365386963e-10f;
+        p[i].x = std::min(v[0] * 2.3283064365386963e-10f, OneMinusEpsilon);
+        p[i].y = std::min(v[1] * 2.3283064365386963e-10f, OneMinusEpsilon);
 #else
-        p[i].x = v[0] * 0x1p-32f;
-        p[i].y = v[1] * 0x1p-32f;
+        p[i].x = std::min(v[0] * 0x1p-32f, OneMinusEpsilon);
+        p[i].y = std::min(v[1] * 0x1p-32f, OneMinusEpsilon);
 #endif
         v[0] ^= C0[CountTrailingZeros(i + 1)];
         v[1] ^= C1[CountTrailingZeros(i + 1)];
@@ -251,23 +257,34 @@ inline Float SobolSample(int64_t index, int dimension, uint64_t scramble = 0) {
 }
 
 inline float SobolSampleFloat(int64_t a, int dimension, uint32_t scramble) {
-    Assert(dimension < NumSobolDimensions);
+    CHECK_LT(dimension, NumSobolDimensions) <<
+        "Integrator has consumed too many Sobol' dimensions; you "
+        "may want to use a Sampler without a dimension limit like "
+        "\"02sequence.\"";
     uint32_t v = scramble;
     for (int i = dimension * SobolMatrixSize; a != 0; a >>= 1, i++)
         if (a & 1) v ^= SobolMatrices32[i];
 #ifndef PBRT_HAVE_HEX_FP_CONSTANTS
-    return v * 2.3283064365386963e-10f; /* 1/2^32 */
+    return std::min(v * 2.3283064365386963e-10f /* 1/2^32 */,
+                    FloatOneMinusEpsilon);
 #else
-    return v * 0x1p-32f; /* 1/2^32 */
+    return std::min(v * 0x1p-32f /* 1/2^32 */,
+                    FloatOneMinusEpsilon);
 #endif
 }
 
 inline double SobolSampleDouble(int64_t a, int dimension, uint64_t scramble) {
-    Assert(dimension < NumSobolDimensions);
+  CHECK_LT(dimension, NumSobolDimensions) <<
+      "Integrator has consumed too many Sobol' dimensions; you "
+      "may want to use a Sampler without a dimension limit like "
+      "\"02sequence\".";
     uint64_t result = scramble & ~ - (1LL << SobolMatrixSize);
     for (int i = dimension * SobolMatrixSize; a != 0; a >>= 1, i++)
         if (a & 1) result ^= SobolMatrices64[i];
-    return result * (1.0 / (1ULL << SobolMatrixSize));
+    return std::min(result * (1.0 / (1ULL << SobolMatrixSize)),
+                    DoubleOneMinusEpsilon);
 }
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_LOWDISCREPANCY_H

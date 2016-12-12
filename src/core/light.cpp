@@ -35,9 +35,25 @@
 #include "light.h"
 #include "scene.h"
 #include "sampling.h"
+#include "stats.h"
 #include "paramset.h"
 
+namespace pbrt {
+
+STAT_COUNTER("Scene/Lights", numLights);
+STAT_COUNTER("Scene/AreaLights", numAreaLights);
+
 // Light Method Definitions
+Light::Light(int flags, const Transform &LightToWorld,
+             const MediumInterface &mediumInterface, int nSamples)
+    : flags(flags),
+      nSamples(std::max(1, nSamples)),
+      mediumInterface(mediumInterface),
+      LightToWorld(LightToWorld),
+      WorldToLight(Inverse(LightToWorld)) {
+    ++numLights;
+}
+
 Light::~Light() {}
 
 bool VisibilityTester::Unoccluded(const Scene &scene) const {
@@ -65,3 +81,11 @@ Spectrum VisibilityTester::Tr(const Scene &scene, Sampler &sampler) const {
 }
 
 Spectrum Light::Le(const RayDifferential &ray) const { return Spectrum(0.f); }
+
+AreaLight::AreaLight(const Transform &LightToWorld, const MediumInterface &medium,
+                     int nSamples)
+    : Light((int)LightFlags::Area, LightToWorld, medium, nSamples) {
+    ++numAreaLights;
+}
+
+}  // namespace pbrt

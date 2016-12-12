@@ -42,6 +42,8 @@
 #include "sampler.h"
 #include "lowdiscrepancy.h"
 
+namespace pbrt {
+
 // HaltonSampler Declarations
 class HaltonSampler : public GlobalSampler {
   public:
@@ -64,13 +66,15 @@ class HaltonSampler : public GlobalSampler {
     // HaltonSampler Private Methods
     const uint16_t *PermutationForDimension(int dim) const {
         if (dim >= PrimeTableSize)
-            Severe("HaltonSampler can only sample %d dimensions.",
-                   PrimeTableSize);
+            LOG(FATAL) << StringPrintf("HaltonSampler can only sample %d "
+                                       "dimensions.", PrimeTableSize);
         return &radicalInversePermutations[PrimeSums[dim]];
     }
 };
 
 HaltonSampler *CreateHaltonSampler(const ParamSet &params,
                                    const Bounds2i &sampleBounds);
+
+}  // namespace pbrt
 
 #endif  // PBRT_SAMPLERS_HALTON_H

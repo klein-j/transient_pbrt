@@ -45,6 +45,8 @@
 #include "medium.h"
 #include "material.h"
 
+namespace pbrt {
+
 // Interaction Declarations
 struct Interaction {
     // Interaction Public Methods
@@ -85,7 +87,7 @@ struct Interaction {
         return Dot(w, n) > 0 ? mediumInterface.outside : mediumInterface.inside;
     }
     const Medium *GetMedium() const {
-        Assert(mediumInterface.inside == mediumInterface.outside);
+        CHECK_EQ(mediumInterface.inside, mediumInterface.outside);
         return mediumInterface.inside;
     }
 
@@ -147,5 +149,7 @@ class SurfaceInteraction : public Interaction {
     mutable Vector3f dpdx, dpdy;
     mutable Float dudx = 0, dvdx = 0, dudy = 0, dvdy = 0;
 };
+
+}  // namespace pbrt
 
 #endif  // PBRT_CORE_INTERACTION_H
