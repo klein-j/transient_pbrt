@@ -133,10 +133,20 @@ int main(int argc, char *argv[]) {
     if (!options.quiet && !options.cat && !options.toPly) {
         printf("Transient Renderer Alpha (built %s at %s) [Detected %d cores]\n",
                __DATE__, __TIME__, NumSystemCores());
+		//printf("Based on pbrt-v3 from Matt Pharr, Greg Humphreys, and Wenzel Jakob\n"); // this should be added to the final release
 #ifndef NDEBUG
         LOG(INFO) << "Running debug build";
         printf("*** DEBUG BUILD ***\n");
 #endif // !NDEBUG
+		/* // Not trying to avoid the license in any way, I'm just against output pollution...
+        printf(
+            "Copyright (c)1998-2016 Matt Pharr, Greg Humphreys, and Wenzel "
+            "Jakob.\n");
+        printf(
+            "The source code to pbrt (but *not* the book contents) is covered "
+            "by the BSD License.\n");
+        printf("See the file LICENSE.txt for the conditions of the license.\n");
+		*/
         fflush(stdout);
     }
     pbrtInit(options);
