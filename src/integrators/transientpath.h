@@ -43,32 +43,60 @@
 #include "integrator.h"
 #include "lightdistrib.h"
 
-namespace pbrt {
+namespace pbrt
+{
+
+
+/**
+
+TransientPathIntegrator is a combination of SamplerIntegrator and PathIntegrator.
+
+At its core, it extends PathIntegrator to also compute the distances of the rays.
+However, to increase efficiency, PathIntegrator::Li computes not only the light along
+the complete path, but also computes direct illuminations of all sub paths. All
+contributions are added and returned to SamplerIntegrator::Render. In our case however,
+each subpath has a different length, and we need to return multiple samples, which is the
+reason why we also have to change the SamplerIntegrator::Render method.
+
+Apart from the Render method (which we need to change), SamplerIntegrator only has some
+helper functions, that we do not use. Hence we combine our changes to PathIntegrator
+and SamplerIntegrator to a single class TransientPathIntegrator.
+
+**/
+
 
 // TransientPathIntegrator Declarations
-	class TransientPathIntegrator : public SamplerIntegrator {
-  public:
+class TransientPathIntegrator : public Integrator
+{
+public:
     // TransientPathIntegrator Public Methods
-	  TransientPathIntegrator(int maxDepth, std::shared_ptr<const Camera> camera,
-                   std::shared_ptr<Sampler> sampler,
-                   const Bounds2i &pixelBounds, Float rrThreshold = 1,
-                   const std::string &lightSampleStrategy = "spatial");
+	TransientPathIntegrator(int maxDepth, std::shared_ptr<const Camera> camera,
+	               std::shared_ptr<Sampler> sampler,
+	               const Bounds2i &pixelBounds, Float rrThreshold = 1,
+	               const std::string &lightSampleStrategy = "spatial");
 
+	/// we don't strictly need this method (it is more of a interface), but we keep it
+	/// so that our structure is closer to the original implementation.
     void Preprocess(const Scene &scene, Sampler &sampler);
-    Spectrum Li(const RayDifferential &ray, const Scene &scene,
-                Sampler &sampler, MemoryArena &arena, int depth) const;
+	virtual Spectrum Li(const RayDifferential &ray, const Scene &scene, Sampler &sampler,
+	                    MemoryArena &arena, int depth = 0) const;
+	virtual void Render(const Scene &scene);
 
-  private:
-    // TransientPathIntegrator Private Data
-    const int maxDepth;
-    const Float rrThreshold;
-    const std::string lightSampleStrategy;
-    std::unique_ptr<LightDistribution> lightDistribution;
+private:
+	const int maxDepth;
+	std::shared_ptr<const Camera> camera;
+	std::shared_ptr<Sampler> sampler;
+	const Bounds2i pixelBounds;
+	const Float rrThreshold;
+	const std::string lightSampleStrategy;
+	
+	std::unique_ptr<LightDistribution> lightDistribution; // created during preprocessing
 };
 
 TransientPathIntegrator *CreateTransientPathIntegrator(const ParamSet &params,
                                      std::shared_ptr<Sampler> sampler,
                                      std::shared_ptr<const Camera> camera);
+
 
 }  // namespace pbrt
 
