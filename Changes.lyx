@@ -93,6 +93,12 @@ book
 )
 \family default
 branch of the official pbrt3 repository.
+ Changes from the 
+\family typewriter
+master
+\family default
+ branch are to be regularly checked into the transient rendering branch,
+ thus it should always be based on the most up to date version.
 \end_layout
 
 \begin_layout Section
@@ -136,7 +142,7 @@ Film
  We can't derive from it, as it creates the pixel storage already in the
  ctor and we would end up having two image buffers.
  We can also not create a common base class, because it would still need
- to have the 2D image interface.
+ to have the 2D image interface, which is directly used by pretty much everyone.
  A clean way of implementing it would require to categorize the integrators
  somehow in two different types, each using the appropriate type of film.
  However, we want a minimal changes branch from pbrt to make it easier for
@@ -160,7 +166,7 @@ Film
 \begin_inset Formula $1\times1$
 \end_inset
 
-.
+ in the transient integrator (as empty as possible).
  The 
 \family typewriter
 TransientPathIntegrator::Render
@@ -169,7 +175,7 @@ TransientPathIntegrator::Render
 \family typewriter
 TransientFilm
 \family default
- object.
+ object, a local object.
  Thus, the normal 
 \family typewriter
 Film
@@ -193,8 +199,8 @@ TransientFilm
 \family typewriter
 Film
 \family default
- in any ways (through the usual OOP methods), but just a very similar class.
- Is parameters are provided by the 
+ in any ways (through the usual OOP ways), but just a very similar class.
+ Its parameters are provided by the 
 \family typewriter
 TransientPathIntegrator
 \family default
@@ -262,12 +268,48 @@ Transient Path
 \end_layout
 
 \begin_layout Standard
-A transient version of the path tracer.
+TransientPathIntegrator is a combination of SamplerIntegrator and PathIntegrator
+, but for the transient case.
+\end_layout
+
+\begin_layout Standard
+At its core, it extends PathIntegrator to also compute the distances of
+ the rays.
+ However, to increase efficiency, PathIntegrator::Li computes not only the
+ light along the complete path, but also computes direct illuminations of
+ all sub paths.
+ All contributions are added and returned to SamplerIntegrator::Render.
+ In our case however, each subpath has a different length, and we need to
+ return multiple samples, which is the reason why we also have to change
+ the SamplerIntegrator::Render method.
+\end_layout
+
+\begin_layout Standard
+Apart from the Render method (which we need to change), SamplerIntegrator
+ only has some helper functions, that we do not use.
+ Hence we combine our changes to PathIntegrator and SamplerIntegrator to
+ a single class TransientPathIntegrator.
 \end_layout
 
 \begin_layout Itemize
 Li does not only return a single intensity, but writes a intensity for each
  path segment (as they can no longer just be added any more)
+\end_layout
+
+\begin_layout Itemize
+
+\family typewriter
+FilmParameters
+\family default
+: As this integrator manages its own film (usually, the camera does this),
+ it also needs to initialize it.
+ Thus, upon creating of the transientPath integrator, all parameters for
+ the film are parsed and stored in this very structure, which is later used
+ to initialize the filter in the 
+\family typewriter
+Render
+\family default
+ method.
 \end_layout
 
 \end_body

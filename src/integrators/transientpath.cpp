@@ -1,40 +1,11 @@
 
-/*
-    pbrt source code is Copyright(c) 1998-2016
-                        Matt Pharr, Greg Humphreys, and Wenzel Jakob.
 
-    This file is part of pbrt.
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are
-    met:
-
-    - Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-
-    - Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-    IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-    TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-    HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
- */
 
 // integrators/transientpath.cpp*
 #include "integrators/transientpath.h"
 #include "bssrdf.h"
 #include "camera.h"
-#include "film.h"
+#include "films/transientfilm.h"
 #include "interaction.h"
 #include "paramset.h"
 #include "scene.h"
@@ -53,12 +24,12 @@ TransientPathIntegrator::TransientPathIntegrator(int maxDepth,
                                std::shared_ptr<const Camera> camera,
                                std::shared_ptr<Sampler> sampler,
                                const Bounds2i &pixelBounds,
+							   std::unique_ptr<TransientFilm> film,
 							   Float rrThreshold,
                                const std::string &lightSampleStrategy):
-	camera(camera), sampler(sampler), pixelBounds(pixelBounds),
-	maxDepth(maxDepth),
-	rrThreshold(rrThreshold),
-	lightSampleStrategy(lightSampleStrategy)
+	maxDepth(maxDepth), camera(camera), sampler(sampler), pixelBounds(pixelBounds),
+	rrThreshold(rrThreshold), lightSampleStrategy(lightSampleStrategy),
+	film(move(film))
 {
 }
 
@@ -214,13 +185,26 @@ Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scen
     return L;
 }
 
+
+
 void TransientPathIntegrator::Render(const Scene &scene)
 {
+	//TODO: should we check here, whether we have exactly one light source? could this ever be a problem?
+
+
+	// check if the camera film is empty
+	// (this is done to catch when people supplied parameters for film that are now ignored. We just make sure people know, that film is non functional in transient rendering
+	{
+		auto a = camera->film->fullResolution;
+		if(a.x!=0 || a.y!=0)
+			Error("Film not set to empty image. Please read the documentation");
+	}
+
 	Preprocess(scene, *sampler);
 	// Render image tiles in parallel
 
 	// Compute number of tiles, _nTiles_, to use for parallel rendering
-	Bounds2i sampleBounds = camera->film->GetSampleBounds();
+	Bounds2i sampleBounds = film->GetSampleBounds();
 	Vector2i sampleExtent = sampleBounds.Diagonal();
 	const int tileSize = 16;
 	Point2i nTiles((sampleExtent.x + tileSize - 1) / tileSize,
@@ -246,8 +230,7 @@ void TransientPathIntegrator::Render(const Scene &scene)
 			LOG(INFO) << "Starting image tile " << tileBounds;
 
 			// Get _FilmTile_ for tile
-			std::unique_ptr<FilmTile> filmTile =
-				camera->film->GetFilmTile(tileBounds);
+			auto filmTile = film->GetFilmTile(tileBounds);
 
 			// Loop over pixels in tile to render them
 			for(Point2i pixel : tileBounds) {
@@ -319,7 +302,7 @@ void TransientPathIntegrator::Render(const Scene &scene)
 			LOG(INFO) << "Finished image tile " << tileBounds;
 
 			// Merge image tile into _Film_
-			camera->film->MergeFilmTile(std::move(filmTile));
+			film->MergeFilmTile(std::move(filmTile));
 			reporter.Update();
 		}, nTiles);
 		reporter.Done();
@@ -327,13 +310,14 @@ void TransientPathIntegrator::Render(const Scene &scene)
 	LOG(INFO) << "Rendering finished";
 
 	// Save final image after rendering
-	camera->film->WriteImage();
+	film->WriteImage();
 }
 
 
-TransientPathIntegrator *CreateTransientPathIntegrator(const ParamSet &params,
+std::unique_ptr<TransientPathIntegrator> CreateTransientPathIntegrator(const ParamSet &params,
                                      std::shared_ptr<Sampler> sampler,
-                                     std::shared_ptr<const Camera> camera) {
+									 std::shared_ptr<const Camera> camera,
+									 std::unique_ptr<TransientFilm> film) {
     int maxDepth = params.FindOneInt("maxdepth", 5);
     int np;
     const int *pb = params.FindInt("pixelbounds", &np);
@@ -352,7 +336,8 @@ TransientPathIntegrator *CreateTransientPathIntegrator(const ParamSet &params,
     Float rrThreshold = params.FindOneFloat("rrthreshold", 1.);
     std::string lightStrategy =
         params.FindOneString("lightsamplestrategy", "spatial");
-	return new TransientPathIntegrator(maxDepth, camera, sampler, pixelBounds,
+
+	return std::make_unique<TransientPathIntegrator>(maxDepth, camera, sampler, pixelBounds, std::move(film),
                               rrThreshold, lightStrategy);
 }
 
