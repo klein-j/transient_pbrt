@@ -150,37 +150,19 @@ Film
 \end_layout
 
 \begin_layout Standard
-Thus, we came up with the following solution: The 
-\family typewriter
-Camera
-\family default
- class still has the 2D 
-\family typewriter
-Film
-\family default
-, but with a size of 
-\begin_inset Formula $0\times0$
-\end_inset
+It would be nice, to just ignore the film in the camera class and use or
+ own.
+ Unfortunately, the film is deeply connected to other parts of pbrt.
+ The camera itself and sampler use its properties, so it cannot simply be
+ removed.
+\end_layout
 
- or 
-\begin_inset Formula $1\times1$
-\end_inset
-
- in the transient integrator (as empty as possible).
- The 
-\family typewriter
-TransientPathIntegrator::Render
-\family default
- method does not use this however, but uses a 
+\begin_layout Standard
+So we create a new class, 
 \family typewriter
 TransientFilm
 \family default
- object, a local object.
- Thus, the normal 
-\family typewriter
-Film
-\family default
- is still in place but entirely unused for transient rendering.
+.
  The 
 \family typewriter
 TransientFilm
@@ -200,26 +182,36 @@ TransientFilm
 Film
 \family default
  in any ways (through the usual OOP ways), but just a very similar class.
- Its parameters are provided by the 
-\family typewriter
-TransientPathIntegrator
-\family default
-.
-\end_layout
-
-\begin_layout Standard
-Although the unused 
+ For its initialization, the same parameters as the ones for 
 \family typewriter
 Film
 \family default
- object is not exactly nice, this is a solution that works by just adding
- two more classes to pbrt and not changing any of the old ones (except for
- the 
+ are used.
+ It is then stored as a member object of 
 \family typewriter
-API
+TransientPathIntegrator
 \family default
-, who needs to know about the new classes to initialize their objects).
- Thus is it deemed to be the best solution for our case.
+ and used inside its 
+\family typewriter
+Render
+\family default
+ method.
+\end_layout
+
+\begin_layout Standard
+The downside is, that we still have the old 
+\family typewriter
+Film
+\family default
+ object, which is unused except for its parameters which are used all over
+ pbrt.
+ However, the framebuffer is not too big and thus the memory waste is negligible.
+ It is also nicer, to have all the stuff, that we don't use (the 2D framebuffer)
+ in a completely different object, rather than in the same (as would happen,
+ if we used it as a base class).
+ On the upside, this solution only require minimal changes to pbrt and two
+ additional files, which are implemented more or less analogeously to their
+ counterparts.
 \end_layout
 
 \begin_layout Subsubsection
@@ -261,6 +253,29 @@ WriteImage
 \begin_layout Itemize
 Filtering: additional filter for the temporal dimension.
  For now independent from the image filter
+\end_layout
+
+\begin_layout Subsubsection
+API
+\end_layout
+
+\begin_layout Standard
+The only changes in the API are in the part where the Integrator is created.
+ As all TransientFilm parameters are now stored in the TransientPathIntegrator
+ properties, the TransientFilm is created in the same block (and before)
+ the TransientPathIntegrator.
+ Thus, the changes to the API are minimal.
+\end_layout
+
+\begin_layout Subsubsection
+Integrator support
+\end_layout
+
+\begin_layout Standard
+By removing the splat- and SetImage functionality, TransientFilm does not
+ support some of the advanced integrators.
+ Maybe this functionality needs to be readded, if they are to be used in
+ the future.
 \end_layout
 
 \begin_layout Subsection
@@ -310,6 +325,30 @@ FilmParameters
 Render
 \family default
  method.
+\end_layout
+
+\begin_layout Section
+Limitations
+\end_layout
+
+\begin_layout Subsection
+Spectral rendering
+\end_layout
+
+\begin_layout Standard
+For now, we do not support spectral rendering, i.e.
+ colors.
+ It would be cool, to see the dyed reflections from differently colored
+ objects appear one after the other and could be helpful for quite some
+ visualizations.
+ But there is no camera on the market, that could measure those, so it is
+ not very useful for synthetic data generation.
+\end_layout
+
+\begin_layout Standard
+In the future, this could be a cool project.
+ But it is really straightforward to implement and would be good for nothing
+ but a few plots.
 \end_layout
 
 \end_body

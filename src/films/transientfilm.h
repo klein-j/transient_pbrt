@@ -19,9 +19,9 @@ namespace pbrt {
 
 class TransientFilmTile;
 
-struct TransientFilmTilePixel {
-	Spectrum contribSum = 0.f;
-	Float filterWeightSum = 0.f;
+struct TransientPixel {
+	Float intensity;
+	Float filterWeightSum;
 };
 
 	
@@ -37,26 +37,17 @@ public:
 	Bounds2f GetPhysicalExtent() const;
 	std::unique_ptr<TransientFilmTile> GetFilmTile(const Bounds2i &sampleBounds);
 	void MergeFilmTile(std::unique_ptr<TransientFilmTile> tile);
-	void SetImage(const Spectrum *img) const;
-	void WriteImage(Float splatScale = 1);
-	void Clear();
 
+	/// writes the transient image to the previously specified file
+	void WriteImage();
 
-	const Point2i fullResolution;
+	const Point3i fullResolution;
 	const Float diagonal;
 	std::unique_ptr<Filter> filter;
 	const std::string filename;
 	Bounds2i croppedPixelBounds;
-
 private:
-	struct TransientPixel {
-		TransientPixel() { xyz[0] = xyz[1] = xyz[2] = filterWeightSum = 0; }
-		Float xyz[3];
-		Float filterWeightSum;
-		AtomicFloat splatXYZ[3];
-		Float pad;
-	};
-	std::unique_ptr<TransientPixel[]> pixels;
+	std::vector<TransientPixel> pixels;
 	static PBRT_CONSTEXPR int filterTableWidth = 16;
 	Float filterTable[filterTableWidth * filterTableWidth];
 	std::mutex mutex;
@@ -85,13 +76,13 @@ public:
 		filterTable(filterTable),
 		filterTableSize(filterTableSize),
 		maxSampleLuminance(maxSampleLuminance) {
-		pixels = std::vector<TransientFilmTilePixel>(std::max(0, pixelBounds.Area()));
+		pixels = std::vector<TransientPixel>(std::max(0, pixelBounds.Area()));
 	}
-	void AddSample(const Point2f &pFilm, Spectrum L,
+	void AddSample(const Point2f &pFilm, Float L,
 		Float sampleWeight = 1.) {
 		ProfilePhase _(Prof::AddFilmSample);
-		if(L.y() > maxSampleLuminance)
-			L *= maxSampleLuminance / L.y();
+		if(L > maxSampleLuminance)
+			L = maxSampleLuminance;
 		// Compute sample's raster bounds
 		Point2f pFilmDiscrete = pFilm - Vector2f(0.5f, 0.5f);
 		Point2i p0 = (Point2i)Ceil(pFilmDiscrete - filterRadius);
@@ -122,20 +113,20 @@ public:
 				Float filterWeight = filterTable[offset];
 
 				// Update pixel values with filtered sample contribution
-				TransientFilmTilePixel &pixel = GetPixel(Point2i(x, y));
-				pixel.contribSum += L * sampleWeight * filterWeight;
+				TransientPixel &pixel = GetPixel(Point2i(x, y));
+				pixel.intensity += L * sampleWeight * filterWeight;
 				pixel.filterWeightSum += filterWeight;
 			}
 		}
 	}
-	TransientFilmTilePixel &GetPixel(const Point2i &p) {
+	TransientPixel &GetPixel(const Point2i &p) {
 		CHECK(InsideExclusive(p, pixelBounds));
 		int width = pixelBounds.pMax.x - pixelBounds.pMin.x;
 		int offset =
 			(p.x - pixelBounds.pMin.x) + (p.y - pixelBounds.pMin.y) * width;
 		return pixels[offset];
 	}
-	const TransientFilmTilePixel &GetPixel(const Point2i &p) const {
+	const TransientPixel &GetPixel(const Point2i &p) const {
 		CHECK(InsideExclusive(p, pixelBounds));
 		int width = pixelBounds.pMax.x - pixelBounds.pMin.x;
 		int offset =
@@ -149,7 +140,7 @@ private:
 	const Vector2f filterRadius, invFilterRadius;
 	const Float *filterTable;
 	const int filterTableSize;
-	std::vector<TransientFilmTilePixel> pixels;
+	std::vector<TransientPixel> pixels;
 	const Float maxSampleLuminance;
 	friend class TransientFilm;
 };

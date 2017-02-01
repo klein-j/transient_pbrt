@@ -65,7 +65,7 @@ Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scen
 	{
 		return (isect.p-lastPos).Length();
 	}
-	return std::numeric_limits<float>::max();
+	return 0;// std::numeric_limits<float>::max();
 
     for (bounces = 0;; ++bounces) {
 		//TODO: remove THIS!
@@ -191,15 +191,6 @@ void TransientPathIntegrator::Render(const Scene &scene)
 {
 	//TODO: should we check here, whether we have exactly one light source? could this ever be a problem?
 
-
-	// check if the camera film is empty
-	// (this is done to catch when people supplied parameters for film that are now ignored. We just make sure people know, that film is non functional in transient rendering
-	{
-		auto a = camera->film->fullResolution;
-		if(a.x!=0 || a.y!=0)
-			Error("Film not set to empty image. Please read the documentation");
-	}
-
 	Preprocess(scene, *sampler);
 	// Render image tiles in parallel
 
@@ -263,7 +254,7 @@ void TransientPathIntegrator::Render(const Scene &scene)
 					Spectrum L(0.f);
 					if(rayWeight > 0) L = Li(ray, scene, *tileSampler, arena);
 
-					// Issue warning if unexpected radiance value returned
+					// Issue warning if unexpected radiance value returned					
 					if(L.HasNaNs()) {
 						LOG(ERROR) << StringPrintf(
 							"Not-a-number radiance value returned "
@@ -292,7 +283,7 @@ void TransientPathIntegrator::Render(const Scene &scene)
 						ray << " -> L = " << L;
 
 					// Add camera ray's contribution to image
-					filmTile->AddSample(cameraSample.pFilm, L, rayWeight);
+					filmTile->AddSample(cameraSample.pFilm, L.y(), rayWeight);
 
 					// Free _MemoryArena_ memory from computing image sample
 					// value
@@ -321,7 +312,7 @@ std::unique_ptr<TransientPathIntegrator> CreateTransientPathIntegrator(const Par
     int maxDepth = params.FindOneInt("maxdepth", 5);
     int np;
     const int *pb = params.FindInt("pixelbounds", &np);
-    Bounds2i pixelBounds = camera->film->GetSampleBounds();
+    Bounds2i pixelBounds = film->GetSampleBounds();
     if (pb) {
         if (np != 4)
             Error("Expected four values for \"pixelbounds\" parameter. Got %d.",

@@ -6,6 +6,8 @@
 #include "imageio.h"
 #include "stats.h"
 
+#include <fstream>
+
 namespace pbrt {
 
 STAT_MEMORY_COUNTER("Memory/Film pixels", filmPixelMemory);
@@ -31,7 +33,7 @@ TransientFilm::TransientFilm(const Point3i &resolution, const Bounds2f &cropWind
 		croppedPixelBounds;
 
 	// Allocate film image storage
-	pixels = std::unique_ptr<TransientPixel[]>(new TransientPixel[croppedPixelBounds.Area()]);
+	pixels.resize(croppedPixelBounds.Area());
 	filmPixelMemory += croppedPixelBounds.Area() * sizeof(TransientPixel);
 
 	// Precompute filter weight table
@@ -74,15 +76,6 @@ std::unique_ptr<TransientFilmTile> TransientFilm::GetFilmTile(const Bounds2i &sa
 		maxSampleLuminance));
 }
 
-void TransientFilm::Clear() {
-	for(Point2i p : croppedPixelBounds) {
-		auto& pixel = GetPixel(p);
-		for(int c = 0; c < 3; ++c)
-			pixel.splatXYZ[c] = pixel.xyz[c] = 0;
-		pixel.filterWeightSum = 0;
-	}
-}
-
 void TransientFilm::MergeFilmTile(std::unique_ptr<TransientFilmTile> tile) {
 	ProfilePhase p(Prof::MergeFilmTile);
 	VLOG(1) << "Merging film tile " << tile->pixelBounds;
@@ -91,65 +84,40 @@ void TransientFilm::MergeFilmTile(std::unique_ptr<TransientFilmTile> tile) {
 		// Merge _pixel_ into _Film::pixels_
 		const auto& tilePixel = tile->GetPixel(pixel);
 		auto& mergePixel = GetPixel(pixel);
-		Float xyz[3];
-		tilePixel.contribSum.ToXYZ(xyz);
-		for(int i = 0; i < 3; ++i) mergePixel.xyz[i] += xyz[i];
+
+		mergePixel.intensity += tilePixel.intensity;
 		mergePixel.filterWeightSum += tilePixel.filterWeightSum;
 	}
 }
 
-void TransientFilm::SetImage(const Spectrum *img) const {
-	int nPixels = croppedPixelBounds.Area();
-	for(int i = 0; i < nPixels; ++i) {
-		auto& p = pixels[i];
-		img[i].ToXYZ(p.xyz);
-		p.filterWeightSum = 1;
-		p.splatXYZ[0] = p.splatXYZ[1] = p.splatXYZ[2] = 0;
-	}
-}
-
-void TransientFilm::WriteImage(Float splatScale) {
+void TransientFilm::WriteImage() {
 	// Convert image to RGB and compute final pixel values
 	LOG(INFO) <<
 		"Converting image to RGB and computing final weighted pixel values";
-	std::unique_ptr<Float[]> rgb(new Float[3 * croppedPixelBounds.Area()]);
+
+	std::vector<float> image(croppedPixelBounds.Area());
 	int offset = 0;
 	for(Point2i p : croppedPixelBounds) {
-		// Convert pixel XYZ color to RGB
-		auto& pixel = GetPixel(p);
-		XYZToRGB(pixel.xyz, &rgb[3 * offset]);
-
-		// Normalize pixel with weight sum
-		Float filterWeightSum = pixel.filterWeightSum;
-		if(filterWeightSum != 0) {
-			Float invWt = (Float)1 / filterWeightSum;
-			rgb[3 * offset] = std::max((Float)0, rgb[3 * offset] * invWt);
-			rgb[3 * offset + 1] =
-				std::max((Float)0, rgb[3 * offset + 1] * invWt);
-			rgb[3 * offset + 2] =
-				std::max((Float)0, rgb[3 * offset + 2] * invWt);
-		}
-
-		// Add splat value at pixel
-		Float splatRGB[3];
-		Float splatXYZ[3] ={pixel.splatXYZ[0], pixel.splatXYZ[1],
-			pixel.splatXYZ[2]};
-		XYZToRGB(splatXYZ, splatRGB);
-		rgb[3 * offset] += splatScale * splatRGB[0];
-		rgb[3 * offset + 1] += splatScale * splatRGB[1];
-		rgb[3 * offset + 2] += splatScale * splatRGB[2];
-
-		// Scale pixel value by _scale_
-		rgb[3 * offset] *= scale;
-		rgb[3 * offset + 1] *= scale;
-		rgb[3 * offset + 2] *= scale;
+		image[offset] = GetPixel(p).intensity / GetPixel(p).filterWeightSum;
 		++offset;
 	}
 
 	// Write RGB image
 	LOG(INFO) << "Writing image " << filename << " with bounds " <<
 		croppedPixelBounds;
-	pbrt::WriteImage(filename, &rgb[0], croppedPixelBounds, fullResolution);
+
+	using namespace std;
+	fstream imageFile(filename, ios_base::out | ios_base::binary | ios_base::trunc);
+
+	// write simple header:
+	struct Header
+	{
+		unsigned int xres, yres;
+	} header;
+	header.xres = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x;
+	header.yres = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
+	imageFile.write((char*)&header, sizeof(Header));
+	imageFile.write((char*)image.data(), sizeof(float)*croppedPixelBounds.Area());
 }
 
 
@@ -176,6 +144,7 @@ std::unique_ptr<TransientFilm> CreateTransientFilm(const ParamSet &params, std::
 	int tres = params.FindOneInt("tresolution", 512);
 	if(PbrtOptions.quickRender) xres = std::max(1, xres / 4);
 	if(PbrtOptions.quickRender) yres = std::max(1, yres / 4);
+	if(PbrtOptions.quickRender) tres = std::max(1, tres / 4);
 	Bounds2f crop(Point2f(0, 0), Point2f(1, 1));
 	int cwi;
 	const Float *cr = params.FindFloat("cropwindow", &cwi);

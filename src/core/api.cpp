@@ -1454,7 +1454,7 @@ Integrator *RenderOptions::MakeIntegrator() const {
 		integrator = CreateSPPMIntegrator(IntegratorParams, camera);
 	} else if(IntegratorName == "transientpath") {
 		// we can't use the camera film, and thus create our own film object here (see documentation)
-		auto transientFilm = CreateTransientFilm(IntegratorParams, MakeFilter(FilterName, FilterParams));
+		auto transientFilm = CreateTransientFilm(FilmParams, MakeFilter(FilterName, FilterParams));
 		// we have to release the unique_ptr here due to broken pbrt interfaces
 		integrator = CreateTransientPathIntegrator(IntegratorParams, sampler, camera, std::move(transientFilm)).release();
     } else {
