@@ -1,6 +1,4 @@
 
-
-
 // integrators/transientpath.cpp*
 #include "integrators/transientpath.h"
 #include "bssrdf.h"

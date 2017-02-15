@@ -1,6 +1,4 @@
 
-
-
 #if defined(_MSC_VER)
 #define NOMINMAX
 #pragma once
@@ -37,8 +35,6 @@ public:
 	virtual Spectrum Li(const RayDifferential &ray, const Scene &scene, Sampler &sampler,
 	                    MemoryArena &arena, int depth = 0) const;
 	virtual void Render(const Scene &scene);
-
-
 private:
 	const int maxDepth;
 	std::shared_ptr<const Camera> camera;

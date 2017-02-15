@@ -256,6 +256,16 @@ Filtering: additional filter for the temporal dimension.
 \end_layout
 
 \begin_layout Subsubsection
+TransientFilmTile
+\end_layout
+
+\begin_layout Standard
+has an aditional tresolution parameter.
+ As time bins are not sampled directly, cropping would not make sense, which
+ is why we keep the original 2d pixel bounds.
+\end_layout
+
+\begin_layout Subsubsection
 API
 \end_layout
 
