@@ -68,7 +68,7 @@ public:
 		const Float *filterTable, int filterTableSize,
 		Float maxSampleLuminance);
 
-	void AddSample(const Point2f &pFilm, Float L,
+	void AddSample(const Point2f &pFilm, Float t, Float L,
 		Float sampleWeight = 1.);
 
 	TransientPixel &GetPixel(const Point3i &p);

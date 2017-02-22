@@ -116,6 +116,9 @@ void TransientFilm::WriteImage() {
 		for(auto t=0; t<fullResolution.z; ++t)
 		{
 			auto pp= Point3i(p.x, p.y, t);
+			// this is not quite right: if different samples fall in different times bins, the total amount is higher than if they fall into the same one
+			// we have to add weights of all time bins and divide each bin by the total amount.
+			// but how would this be changed, if we wanted also temporal sampling?
 			image[offset] = GetPixel(pp).intensity / GetPixel(pp).filterWeightSum;
 			++offset;
 		}
@@ -219,7 +222,7 @@ TransientFilmTile::TransientFilmTile(const Bounds2i &pixelBounds, unsigned int t
 }
 
 
-void TransientFilmTile::AddSample(const Point2f &pFilm, Float L, Float sampleWeight) {
+void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float sampleWeight) {
 	ProfilePhase _(Prof::AddFilmSample);
 	if(L > maxSampleLuminance)
 		L = maxSampleLuminance;
@@ -248,7 +251,8 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float L, Float sampleWei
 	}
 
 
-	auto timeBin = static_cast<int>( (L-tmin)/(tmax-tmin) * tresolution);
+	// todo: do some proper filtering here!
+	auto timeBin = static_cast<int>( (t-tmin)/(tmax-tmin) * tresolution);
 	timeBin = Clamp(timeBin, 0, tresolution-1);
 
 	for(int y = p0.y; y < p1.y; ++y) {

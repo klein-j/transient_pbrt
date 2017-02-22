@@ -12,6 +12,7 @@
 #include "integrator.h"
 #include "lightdistrib.h"
 #include "films/transientfilm.h"
+#include <functional>
 
 namespace pbrt
 {
@@ -32,8 +33,8 @@ public:
 	/// we don't strictly need this method (it is more of a interface), but we keep it
 	/// so that our structure is closer to the original implementation.
     void Preprocess(const Scene &scene, Sampler &sampler);
-	virtual Spectrum Li(const RayDifferential &ray, const Scene &scene, Sampler &sampler,
-	                    MemoryArena &arena, int depth = 0) const;
+	virtual void Li(const RayDifferential &ray, const Scene &scene, Sampler &sampler,
+	                    MemoryArena &arena, std::function<void(Spectrum, Float)> AddSample, int depth = 0) const;
 	virtual void Render(const Scene &scene);
 private:
 	const int maxDepth;

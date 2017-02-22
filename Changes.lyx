@@ -102,6 +102,47 @@ master
 \end_layout
 
 \begin_layout Section
+New Concepts
+\end_layout
+
+\begin_layout Subsection
+Filtering and weighting of sample values
+\end_layout
+
+\begin_layout Standard
+The sum of sample values if weighted to account for different amounts of
+ samples (i.e.
+ if the scene is rendered with 4 times as many samples, it should have the
+ same brightness (but less noise)).
+ It is not sufficient, to just divide by a static number of samples, as
+ different pixels have a different sampling density due to filtering.
+ Edge pixels won't any contribution from pixels outside the image and by
+ randomizing the ray origin and direction, the density varies slightly in
+ general.
+ Thus in pbrt, each pixel sums up the filter weights and the pixel value
+ is divided by this number in the end.
+\end_layout
+
+\begin_layout Standard
+In our case, we cannot sample the time dimension explicitly.
+ This means, that we do have a importance sampling in the time domain (but
+ not in the spatial dimensions), and more samples mean more light.
+ Thus, the correct solution is to store the weights not per transient pixel,
+ but per 
+\begin_inset Quotes eld
+\end_inset
+
+spatial
+\begin_inset Quotes erd
+\end_inset
+
+ pixel, i.e.
+ one weight value for each x,y coordinate.
+ Every time bin of a single spatial pixel is then divided by the same accumulate
+d weight for this pixel.
+\end_layout
+
+\begin_layout Section
 Modifications
 \end_layout
 
@@ -132,7 +173,7 @@ Design Choice
 \end_layout
 
 \begin_layout Standard
-The main challange is, that pbrt was written with the computation of 2D
+The main challenge is, that pbrt was written with the computation of 2D
  images in mind.
  Thus, there currently is only a single film class (
 \family typewriter

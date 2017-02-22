@@ -37,11 +37,11 @@ void TransientPathIntegrator::Preprocess(const Scene &scene, Sampler &sampler) {
 }
 
 
-Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
-                            Sampler &sampler, MemoryArena &arena,
+void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
+                            Sampler &sampler, MemoryArena &arena, std::function<void(Spectrum, Float)> AddSample,
                             int depth) const {
     ProfilePhase p(Prof::SamplerIntegratorLi);
-    Spectrum L(0.f), beta(1.f);
+    Spectrum beta(1.f);
 	float geometricPathLength = 0.f; // which correlates with the travel time of the light
 	Point3f lastPos = r.o;
     RayDifferential ray(r);
@@ -56,22 +56,9 @@ Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scen
     // out of a medium and thus have their beta value increased.
     Float etaScale = 1;
 
-
-	// quickly compute the distance
-	SurfaceInteraction isect;
-	if(scene.Intersect(ray, &isect))
-	{
-		return (isect.p-lastPos).Length();
-	}
-	return 0;// std::numeric_limits<float>::max();
-
     for (bounces = 0;; ++bounces) {
-		//TODO: remove THIS!
-		break;
-
-
         // Find next path vertex and accumulate contribution
-        VLOG(2) << "Path tracer bounce " << bounces << ", current L = " << L
+        VLOG(2) << "Path tracer bounce " << bounces << ", current geometricPathLength = " << geometricPathLength
                 << ", beta = " << beta;
 
 		lastPos = ray.o;
@@ -82,19 +69,11 @@ Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scen
 		
 		// compute the length:
 		geometricPathLength += (isect.p-lastPos).Length();
+		lastPos = isect.p;
 
-        // Possibly add emitted light at intersection
-        if (bounces == 0 || specularBounce) {
-            // Add emitted light at path vertex or from the environment
-            if (foundIntersection) {
-                L += beta * isect.Le(-ray.d);
-                VLOG(2) << "Added Le -> L = " << L;
-            } else {
-                for (const auto &light : scene.infiniteLights)
-                    L += beta * light->Le(ray);
-                VLOG(2) << "Added infinite area lights -> L = " << L;
-            }
-        }
+		// emissive materials don't really make sense in the transient case, so we removed the code
+		// ...
+
 
         // Terminate path if ray escaped or _maxDepth_ was reached
         if (!foundIntersection || bounces >= maxDepth) break;
@@ -120,7 +99,7 @@ Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scen
             VLOG(2) << "Sampled direct lighting Ld = " << Ld;
             if (Ld.IsBlack()) ++zeroRadiancePaths;
             CHECK_GE(Ld.y(), 0.f);
-            L += Ld;
+			AddSample(Ld, geometricPathLength);
         }
 
         // Sample BSDF to get new path direction
@@ -144,30 +123,9 @@ Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scen
             etaScale *= (Dot(wo, isect.n) > 0) ? (eta * eta) : 1 / (eta * eta);
         }
         ray = isect.SpawnRay(wi);
-
-        // Account for subsurface scattering, if applicable
-        if (isect.bssrdf && (flags & BSDF_TRANSMISSION)) {
-            // Importance sample the BSSRDF
-            SurfaceInteraction pi;
-            Spectrum S = isect.bssrdf->Sample_S(
-                scene, sampler.Get1D(), sampler.Get2D(), arena, &pi, &pdf);
-            DCHECK(!std::isinf(beta.y()));
-            if (S.IsBlack() || pdf == 0) break;
-            beta *= S / pdf;
-
-            // Account for the direct subsurface scattering component
-            L += beta * UniformSampleOneLight(pi, scene, arena, sampler, false,
-                                              lightDistribution->Lookup(pi.p));
-
-            // Account for the indirect subsurface scattering component
-            Spectrum f = pi.bsdf->Sample_f(pi.wo, &wi, sampler.Get2D(), &pdf,
-                                           BSDF_ALL, &flags);
-            if (f.IsBlack() || pdf == 0) break;
-            beta *= f * AbsDot(wi, pi.shading.n) / pdf;
-            DCHECK(!std::isinf(beta.y()));
-            specularBounce = (flags & BSDF_SPECULAR) != 0;
-            ray = pi.SpawnRay(wi);
-        }
+		
+        // currently we do not support SSS, so the code is removed
+		// ...
 
         // Possibly terminate the path with Russian roulette.
         // Factor out radiance scaling due to refraction in rrBeta.
@@ -180,7 +138,6 @@ Spectrum TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scen
         }
     }
     ReportValue(pathLength, bounces);
-    return L;
 }
 
 
@@ -248,40 +205,44 @@ void TransientPathIntegrator::Render(const Scene &scene)
 						1 / std::sqrt((Float)tileSampler->samplesPerPixel));
 					++nCameraRays;
 
+
+					/* the transient integrator can't accumulate all samples along a path and return them,
+					   thus we pass a lambda to it. The code is formatted in a way that makes it very similar
+					   to the original one. */
 					// Evaluate radiance along camera ray
-					Spectrum L(0.f);
-					if(rayWeight > 0) L = Li(ray, scene, *tileSampler, arena);
+					if(rayWeight > 0) Li(ray, scene, *tileSampler, arena, [&](Spectrum L, Float distance)
+					{
+						// Issue warning if unexpected radiance value returned					
+						if(L.HasNaNs()) {
+							LOG(ERROR) << StringPrintf(
+								"Not-a-number radiance value returned "
+								"for pixel (%d, %d), sample %d. Setting to black.",
+								pixel.x, pixel.y,
+								(int)tileSampler->CurrentSampleNumber());
+							L = Spectrum(0.f);
+						}
+						else if(L.y() < -1e-5) {
+							LOG(ERROR) << StringPrintf(
+								"Negative luminance value, %f, returned "
+								"for pixel (%d, %d), sample %d. Setting to black.",
+								L.y(), pixel.x, pixel.y,
+								(int)tileSampler->CurrentSampleNumber());
+							L = Spectrum(0.f);
+						}
+						else if(std::isinf(L.y())) {
+							LOG(ERROR) << StringPrintf(
+								"Infinite luminance value returned "
+								"for pixel (%d, %d), sample %d. Setting to black.",
+								pixel.x, pixel.y,
+								(int)tileSampler->CurrentSampleNumber());
+							L = Spectrum(0.f);
+						}
+						VLOG(1) << "Camera sample: " << cameraSample << " -> ray: " <<
+							ray << " -> L = " << L;
 
-					// Issue warning if unexpected radiance value returned					
-					if(L.HasNaNs()) {
-						LOG(ERROR) << StringPrintf(
-							"Not-a-number radiance value returned "
-							"for pixel (%d, %d), sample %d. Setting to black.",
-							pixel.x, pixel.y,
-							(int)tileSampler->CurrentSampleNumber());
-						L = Spectrum(0.f);
-					}
-					else if(L.y() < -1e-5) {
-						LOG(ERROR) << StringPrintf(
-							"Negative luminance value, %f, returned "
-							"for pixel (%d, %d), sample %d. Setting to black.",
-							L.y(), pixel.x, pixel.y,
-							(int)tileSampler->CurrentSampleNumber());
-						L = Spectrum(0.f);
-					}
-					else if(std::isinf(L.y())) {
-						LOG(ERROR) << StringPrintf(
-							"Infinite luminance value returned "
-							"for pixel (%d, %d), sample %d. Setting to black.",
-							pixel.x, pixel.y,
-							(int)tileSampler->CurrentSampleNumber());
-						L = Spectrum(0.f);
-					}
-					VLOG(1) << "Camera sample: " << cameraSample << " -> ray: " <<
-						ray << " -> L = " << L;
-
-					// Add camera ray's contribution to image
-					filmTile->AddSample(cameraSample.pFilm, L.y(), rayWeight);
+						// Add camera ray's contribution to image
+						filmTile->AddSample(cameraSample.pFilm, distance, L.y(), rayWeight);
+					});
 
 					// Free _MemoryArena_ memory from computing image sample
 					// value
