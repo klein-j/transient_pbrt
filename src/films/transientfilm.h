@@ -17,9 +17,13 @@ namespace pbrt {
 
 class TransientFilmTile;
 
-struct TransientPixel {
-	Float intensity;
-	Float filterWeightSum;
+/* A reference to a transient pixel. Each spatial pixel has only one weight,
+thus there is a 3d intensity vector and a 2d weight vector. This struct
+contains a intensity along with its shared weight.
+*/
+struct TransientPixelRef {
+	Float* intensity;
+	Float* filterWeightSum;
 };
 
 	
@@ -46,7 +50,8 @@ public:
 	const std::string filename;
 	Bounds2i croppedPixelBounds;
 private:
-	std::vector<TransientPixel> pixels;
+	std::vector<Float> pixelIntensities;
+	std::vector<Float> pixelWeights;
 	Float tmin, tmax;
 
 
@@ -57,7 +62,7 @@ private:
 	const Float maxSampleLuminance;
 
 
-	TransientPixel &GetPixel(const Point3i &p);
+	TransientPixelRef GetPixel(const Point3i &p);
 };
 
 
@@ -71,11 +76,10 @@ public:
 	void AddSample(const Point2f &pFilm, Float t, Float L,
 		Float sampleWeight = 1.);
 
-	TransientPixel &GetPixel(const Point3i &p);
+	TransientPixelRef GetPixel(const Point3i &p);
+	//const TransientPixelRef GetPixel(const Point3i &p) const;
 
-	const TransientPixel &GetPixel(const Point3i &p) const;
 	Bounds2i GetPixelBounds() const;
-
 private:
 	const Bounds2i pixelBounds;
 	const unsigned int tresolution; ///< as the t dimension is never cropped, a Bounds3i would be pointless - thus we introduce this extra parameter
@@ -83,7 +87,8 @@ private:
 	const Vector2f filterRadius, invFilterRadius;
 	const Float *filterTable;
 	const int filterTableSize;
-	std::vector<TransientPixel> pixels;
+	std::vector<Float> pixelIntensities;
+	std::vector<Float> pixelWeights;
 	const Float maxSampleLuminance;
 	friend class TransientFilm;
 };

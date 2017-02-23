@@ -35,8 +35,10 @@ TransientFilm::TransientFilm(const Point3i &resolution, Float tmin, Float tmax,
 		croppedPixelBounds;
 
 	// Allocate film image storage
-	pixels.resize(croppedPixelBounds.Area() * fullResolution.z);
-	filmPixelMemory += croppedPixelBounds.Area() * fullResolution.z * sizeof(TransientPixel);
+	pixelIntensities.resize(croppedPixelBounds.Area() * fullResolution.z);
+	pixelWeights.resize(croppedPixelBounds.Area());
+	filmPixelMemory += croppedPixelBounds.Area() * fullResolution.z * sizeof(Float); // the intensities
+	filmPixelMemory += croppedPixelBounds.Area() * sizeof(Float); // the weights
 
 	// Precompute filter weight table
 	int offset = 0;
@@ -90,8 +92,8 @@ void TransientFilm::MergeFilmTile(std::unique_ptr<TransientFilmTile> tile) {
 			const auto& tilePixel = tile->GetPixel({pixel.x, pixel.y, t});
 			auto& mergePixel = GetPixel({pixel.x, pixel.y, t});
 
-			mergePixel.intensity += tilePixel.intensity;
-			mergePixel.filterWeightSum += tilePixel.filterWeightSum;
+			*mergePixel.intensity += *tilePixel.intensity;
+			*mergePixel.filterWeightSum += *tilePixel.filterWeightSum;
 		}
 	}
 }
@@ -119,7 +121,7 @@ void TransientFilm::WriteImage() {
 			// this is not quite right: if different samples fall in different times bins, the total amount is higher than if they fall into the same one
 			// we have to add weights of all time bins and divide each bin by the total amount.
 			// but how would this be changed, if we wanted also temporal sampling?
-			image[offset] = GetPixel(pp).intensity / GetPixel(pp).filterWeightSum;
+			image[offset] = *GetPixel(pp).intensity / *GetPixel(pp).filterWeightSum;
 			++offset;
 		}
 	}
@@ -142,12 +144,12 @@ void TransientFilm::WriteImage() {
 	imageFile.write((char*)image.data(), sizeof(float)*croppedPixelBounds.Area() * fullResolution.z);
 }
 
-TransientPixel& TransientFilm::GetPixel(const Point3i &p) {
+TransientPixelRef TransientFilm::GetPixel(const Point3i &p) {
 	CHECK(InsideExclusive(Point2i(p.x, p.y), croppedPixelBounds));
 	int width = croppedPixelBounds.pMax.x - croppedPixelBounds.pMin.x;
 	int pixelOffset = (p.x - croppedPixelBounds.pMin.x) +
 		(p.y - croppedPixelBounds.pMin.y) * width;
-	return pixels[pixelOffset*fullResolution.z + p.z];
+	return {&pixelIntensities[pixelOffset*fullResolution.z + p.z], &pixelWeights[pixelOffset]};
 }
 
 
@@ -218,7 +220,8 @@ TransientFilmTile::TransientFilmTile(const Bounds2i &pixelBounds, unsigned int t
 	filterTableSize(filterTableSize),
 	maxSampleLuminance(maxSampleLuminance)
 {
-	pixels = std::vector<TransientPixel>(std::max(0, pixelBounds.Area()) * tresolution);
+	pixelIntensities = std::vector<Float>(std::max(0, pixelBounds.Area()) * tresolution);
+	pixelWeights = std::vector<Float>(std::max(0, pixelBounds.Area()));
 }
 
 
@@ -262,26 +265,33 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 			Float filterWeight = filterTable[offset];
 
 			// Update pixel values with filtered sample contribution
-			TransientPixel &pixel = GetPixel({x, y, timeBin});
-			pixel.intensity += L * sampleWeight * filterWeight;
-			pixel.filterWeightSum += filterWeight;
+			auto pixel = GetPixel({x, y, timeBin});
+			*pixel.intensity += L * sampleWeight * filterWeight;
+			*pixel.filterWeightSum += filterWeight;
 		}
 	}
 }
 
 
-TransientPixel& TransientFilmTile::GetPixel(const Point3i &p) {
-	return const_cast<TransientPixel&>(const_cast<const TransientFilmTile*>(this)->GetPixel(p));
+TransientPixelRef TransientFilmTile::GetPixel(const Point3i &p) {
+	CHECK(InsideExclusive(Point2i(p.x, p.y), pixelBounds));
+	int width = pixelBounds.pMax.x - pixelBounds.pMin.x;
+	int pixelOffset =
+		(p.x - pixelBounds.pMin.x) + (p.y - pixelBounds.pMin.y) * width;
+	
+	return {&pixelIntensities[pixelOffset*tresolution + p.z], &pixelWeights[pixelOffset]};
 }
 
 
-const TransientPixel& TransientFilmTile::GetPixel(const Point3i &p) const {
+/*const TransientPixelRef TransientFilmTile::GetPixel(const Point3i &p) const {
 	CHECK(InsideExclusive(Point2i(p.x, p.y), pixelBounds));
 	int width = pixelBounds.pMax.x - pixelBounds.pMin.x;
 	int pixelOffset =
 		(p.x - pixelBounds.pMin.x) + (p.y - pixelBounds.pMin.y) * width;
 	return pixels[pixelOffset*tresolution + p.z];
-}
+	
+	return {&pixelsIntensities[pixelOffset*tresolution + p.z], &pixelsWeights[pixelOffset]};
+}*/
 
 
 Bounds2i TransientFilmTile::GetPixelBounds() const{
