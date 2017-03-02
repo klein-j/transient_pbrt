@@ -229,6 +229,7 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 	ProfilePhase _(Prof::AddFilmSample);
 	if(L > maxSampleLuminance)
 		L = maxSampleLuminance;
+
 	// Compute sample's raster bounds
 	Point2f pFilmDiscrete = pFilm - Vector2f(0.5f, 0.5f);
 	Point2i p0 = (Point2i)Ceil(pFilmDiscrete - filterRadius);
@@ -236,6 +237,17 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 		(Point2i)Floor(pFilmDiscrete + filterRadius) + Point2i(1, 1);
 	p0 = Max(p0, pixelBounds.pMin);
 	p1 = Min(p1, pixelBounds.pMax);
+
+	// same for temporal dimension
+	auto timeBin = static_cast<int>( (t-tmin)/(tmax-tmin) * tresolution);
+	if(timeBin >= tresolution || timeBin < 0)
+		return; //skip these samples
+
+	auto tDiscrete = timeBin - 0.5;
+	auto t0 = static_cast<int>( ceil(timeBin-filterRadius.x));
+	auto t1 = static_cast<int>(floor(timeBin+filterRadius.x) + 1);
+	t0 = std::max<int>(t0, 0);
+	t1 = std::min<int>(t1, tresolution);
 
 	// Loop over filter support and add sample to pixel arrays
 
@@ -253,20 +265,36 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 		ify[y - p0.y] = std::min((int)std::floor(fy), filterTableSize - 1);
 	}
 
+	// precompute temporal filter table offsets
+	int *ift = ALLOCA(int, t1-t0);
+	for(int t=t0; t<t1; ++t)
+	{
+		Float ft = std::abs((t - tDiscrete) * invFilterRadius.x *
+			filterTableSize);
+		ift[t - t0] = std::min((int)std::floor(ft), filterTableSize - 1);
+	}
 
-	// todo: do some proper filtering here!
-	auto timeBin = static_cast<int>( (t-tmin)/(tmax-tmin) * tresolution);
-	timeBin = Clamp(timeBin, 0, tresolution-1);
+	/*  normally the weight is stored for each pixel separately
+		and at the end, the sample sum is divided by the sum of the weights.
 
+		As we have importance sampling in the temporal dimension, we store
+		the pixel weight only for the spatial dimensions. Thus the weights
+		of filtering the temporal dimension is immediately applied and no
+		denominator must be stored.
+	*/
 	for(int y = p0.y; y < p1.y; ++y) {
 		for(int x = p0.x; x < p1.x; ++x) {
 			// Evaluate filter value at $(x,y)$ pixel
 			int offset = ify[y - p0.y] * filterTableSize + ifx[x - p0.x];
 			Float filterWeight = filterTable[offset];
 
-			// Update pixel values with filtered sample contribution
-			auto pixel = GetPixel({x, y, timeBin});
-			*pixel.intensity += L * sampleWeight * filterWeight;
+			for(int t=t0; t<t1; ++t)
+			{
+				// Update pixel values with filtered sample contribution
+				auto pixel = GetPixel({x, y, t});
+				*pixel.intensity += L * sampleWeight * filterWeight * filterTable[ift[t-t0]];
+			}
+			auto pixel = GetPixel({x, y, 0}); // filter weight sum is the same for all pixels with the same x,y
 			*pixel.filterWeightSum += filterWeight;
 		}
 	}

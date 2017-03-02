@@ -106,19 +106,19 @@ New Concepts
 \end_layout
 
 \begin_layout Subsection
-Filtering and weighting of sample values
+Sample sum normalization
 \end_layout
 
 \begin_layout Standard
-The sum of sample values if weighted to account for different amounts of
- samples (i.e.
+The sum of sample values is normalized to account for different amounts
+ of samples (i.e.
  if the scene is rendered with 4 times as many samples, it should have the
  same brightness (but less noise)).
  It is not sufficient, to just divide by a static number of samples, as
  different pixels have a different sampling density due to filtering.
- Edge pixels won't any contribution from pixels outside the image and by
- randomizing the ray origin and direction, the density varies slightly in
- general.
+ Edge pixels won't get any contribution from pixels outside the image and
+ by randomizing the ray origin and direction, the density varies slightly
+ in general.
  Thus in pbrt, each pixel sums up the filter weights and the pixel value
  is divided by this number in the end.
 \end_layout
@@ -140,6 +140,20 @@ spatial
  one weight value for each x,y coordinate.
  Every time bin of a single spatial pixel is then divided by the same accumulate
 d weight for this pixel.
+\end_layout
+
+\begin_layout Subsection
+Filtering in the transient dimension
+\end_layout
+
+\begin_layout Standard
+Just as in the two spatial dimensions wee need filtering in the spatial
+ dimension to avoid implicit box filtering.
+ The same principles apply as in spatial filtering.
+ As simplification, we use the filter table that is already stored for spatial
+ filtering.
+ In the future it might be possible to specify a different filter or filter
+ size for the temporal dimension, but for now using the same values is fine.
 \end_layout
 
 \begin_layout Section
