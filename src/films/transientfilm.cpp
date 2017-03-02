@@ -267,12 +267,15 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 
 	// precompute temporal filter table offsets
 	int *ift = ALLOCA(int, t1-t0);
+	Float temporalFilterTotalWeight = 0;
 	for(int t=t0; t<t1; ++t)
 	{
 		Float ft = std::abs((t - tDiscrete) * invFilterRadius.x *
 			filterTableSize);
 		ift[t - t0] = std::min((int)std::floor(ft), filterTableSize - 1);
+		temporalFilterTotalWeight += filterTable[ift[t - t0]];
 	}
+	auto temporalFilterTotalWeightInv = 1.0 / temporalFilterTotalWeight;
 
 	/*  normally the weight is stored for each pixel separately
 		and at the end, the sample sum is divided by the sum of the weights.
@@ -287,12 +290,12 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 			// Evaluate filter value at $(x,y)$ pixel
 			int offset = ify[y - p0.y] * filterTableSize + ifx[x - p0.x];
 			Float filterWeight = filterTable[offset];
-
+			
 			for(int t=t0; t<t1; ++t)
 			{
 				// Update pixel values with filtered sample contribution
 				auto pixel = GetPixel({x, y, t});
-				*pixel.intensity += L * sampleWeight * filterWeight * filterTable[ift[t-t0]];
+				*pixel.intensity += L * sampleWeight * filterWeight * filterTable[ift[t-t0]] * temporalFilterTotalWeightInv;
 			}
 			auto pixel = GetPixel({x, y, 0}); // filter weight sum is the same for all pixels with the same x,y
 			*pixel.filterWeightSum += filterWeight;
@@ -309,17 +312,6 @@ TransientPixelRef TransientFilmTile::GetPixel(const Point3i &p) {
 	
 	return {&pixelIntensities[pixelOffset*tresolution + p.z], &pixelWeights[pixelOffset]};
 }
-
-
-/*const TransientPixelRef TransientFilmTile::GetPixel(const Point3i &p) const {
-	CHECK(InsideExclusive(Point2i(p.x, p.y), pixelBounds));
-	int width = pixelBounds.pMax.x - pixelBounds.pMin.x;
-	int pixelOffset =
-		(p.x - pixelBounds.pMin.x) + (p.y - pixelBounds.pMin.y) * width;
-	return pixels[pixelOffset*tresolution + p.z];
-	
-	return {&pixelsIntensities[pixelOffset*tresolution + p.z], &pixelsWeights[pixelOffset]};
-}*/
 
 
 Bounds2i TransientFilmTile::GetPixelBounds() const{

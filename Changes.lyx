@@ -156,6 +156,18 @@ Just as in the two spatial dimensions wee need filtering in the spatial
  size for the temporal dimension, but for now using the same values is fine.
 \end_layout
 
+\begin_layout Standard
+With temporal filtering, weighting gets slightly more complicated.
+ In theory, a single sample is just distributed over multiple time bins.
+ Due to clamping (and possibly other effects) it is however not guaranteed,
+ that these temporal filter weights add up to 1.
+ Additionally we use just one row of a 2d filter and then assume, that the
+ filter is separable (as all standard filters in pbrt are).
+ This means, that we compute the sum of the weights of the temporal filter
+ and divide by it later to ensure that the total intensity remains unchanged
+ by the filtering.
+\end_layout
+
 \begin_layout Section
 Modifications
 \end_layout
@@ -260,10 +272,11 @@ Film
 \family default
  object, which is unused except for its parameters which are used all over
  pbrt.
- However, the framebuffer is not too big and thus the memory waste is negligible.
- It is also nicer, to have all the stuff, that we don't use (the 2D framebuffer)
- in a completely different object, rather than in the same (as would happen,
- if we used it as a base class).
+ However, the frame buffer is not too big and thus the memory waste is negligibl
+e.
+ It is also nicer, to have all the stuff, that we don't use (the 2D frame
+ buffer) in a completely different object, rather than in the same (as would
+ happen, if we used it as a base class).
  On the upside, this solution only require minimal changes to pbrt and two
  additional files, which are implemented more or less analogeously to their
  counterparts.
@@ -315,7 +328,7 @@ TransientFilmTile
 \end_layout
 
 \begin_layout Standard
-has an aditional tresolution parameter.
+has an additional tresolution parameter.
  As time bins are not sampled directly, cropping would not make sense, which
  is why we keep the original 2d pixel bounds.
 \end_layout
