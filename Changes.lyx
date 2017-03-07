@@ -405,6 +405,41 @@ Render
  method.
 \end_layout
 
+\begin_layout Subsubsection
+UniformSampleOneLight
+\end_layout
+
+\begin_layout Standard
+While sampling the light source, the distance from the last point on geometry
+ to the light source must be considered.
+ For this, 
+\family typewriter
+UniformSampleOneLight
+\family default
+ must also return this distance.
+ This is implemented by copying 
+\family typewriter
+UniformSampleOneLight
+\family default
+ and 
+\family typewriter
+EstimateDirect
+\family default
+ into the functions 
+\family typewriter
+TransientUniformSampleOneLight
+\family default
+ and 
+\family typewriter
+TransientEstimateDirect
+\family default
+.
+ In the spirit of minimal changes, this may be a code dubplication but leaves
+ the rest of pbrt completely untouched.
+ Using an appropriate diff tool it is still possible to see these minimal
+ changes and merge changes of the original functions in the transient ones.
+\end_layout
+
 \begin_layout Section
 Limitations
 \end_layout
@@ -427,6 +462,21 @@ For now, we do not support spectral rendering, i.e.
 In the future, this could be a cool project.
  But it is really straightforward to implement and would be good for nothing
  but a few plots.
+\end_layout
+
+\begin_layout Section
+TODO
+\end_layout
+
+\begin_layout Subsection
+Filtering check
+\end_layout
+
+\begin_layout Standard
+Make sure, that introducing the temporal filter did not change any intensity
+ images.
+ Render images with lots of samples with and without filtering and compare
+ them.
 \end_layout
 
 \end_body

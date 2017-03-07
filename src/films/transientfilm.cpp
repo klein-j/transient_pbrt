@@ -272,7 +272,8 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 	{
 		Float ft = std::abs((t - tDiscrete) * invFilterRadius.x *
 			filterTableSize);
-		ift[t - t0] = std::min((int)std::floor(ft), filterTableSize - 1);
+		auto offset = filterTableSize*static_cast<int>(filterTableSize/2); // to get the middle row of the filter
+		ift[t - t0] = std::min((int)std::floor(ft), filterTableSize - 1) + offset;
 		temporalFilterTotalWeight += filterTable[ift[t - t0]];
 	}
 	auto temporalFilterTotalWeightInv = 1.0 / temporalFilterTotalWeight;
