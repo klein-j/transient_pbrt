@@ -142,6 +142,16 @@ spatial
 d weight for this pixel.
 \end_layout
 
+\begin_layout Standard
+Additionally, every sample is divided by the temporal bin size.
+ The transient image is a distribution of light per time, and thus must
+ be integrated to retrieve the absolute amount of light for a time interval.
+ The compute the absolute intensity of a spatial pixel, the bin values can
+ be thought of as Monte Carlo samples, thus adding them, dividing them by
+ their count and multiplying by the interval length will yield the integral
+ value.
+\end_layout
+
 \begin_layout Subsection
 Filtering in the transient dimension
 \end_layout
@@ -166,6 +176,158 @@ With temporal filtering, weighting gets slightly more complicated.
  This means, that we compute the sum of the weights of the temporal filter
  and divide by it later to ensure that the total intensity remains unchanged
  by the filtering.
+\end_layout
+
+\begin_layout Subsection
+blub
+\end_layout
+
+\begin_layout Standard
+In practice, multiple samples are generated for each pixel.
+ Because of different filters and positional offsets, each sample has a
+ weight that is then used to compute the intensity value.
+ As we cannot directly sample the geometric path length (it is a result
+ of our sampling), 
+\end_layout
+
+\begin_layout Section
+Transient Images
+\end_layout
+
+\begin_layout Subsection
+Transient Image definition
+\end_layout
+
+\begin_layout Standard
+Transient images are time resolved intensity images.
+ Thus, appropriate integrating over the time dimension yields an intensity
+ image of the scene.
+\end_layout
+
+\begin_layout Standard
+Let 
+\begin_inset Formula $I$
+\end_inset
+
+ bet the 
+\emph on
+intensity image
+\emph default
+, that stores an intensity 
+\begin_inset Formula $v$
+\end_inset
+
+ per discrete pixel
+\begin_inset Formula 
+\[
+I\left(x_{i},y_{j}\right)=v_{i,j}
+\]
+
+\end_inset
+
+By adding a continuous temporal axis to the image, we get the 
+\emph on
+continuous transient image
+\emph default
+ 
+\begin_inset Formula $T_{c}$
+\end_inset
+
+ which describes the temporal response of each pixel.
+ Integrating along the temporal axis yields the intensity image:
+\begin_inset Formula 
+\[
+\int_{t}T_{c}\left(x_{i},y_{j},t'\right)\,\text{d}t'=I\left(x_{i},y_{i}\right)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+When discretizing 
+\begin_inset Formula $T_{c}$
+\end_inset
+
+ in the temporal dimension (so that we can store it), we could come up with
+ the following solution:
+\begin_inset Formula 
+\[
+I\left(x_{i},y_{j}\right)=\sum_{t\in\left[t_{o}\ldots t_{n-1}\right]}T_{s}\left(x_{i},y_{j}t\right)
+\]
+
+\end_inset
+
+However in this formulation, the values of 
+\begin_inset Formula $T_{s}$
+\end_inset
+
+ change when the discretization is changed (e.g.
+ twice as many bins with half width).
+ If we interpret the temporal dimension as a density, we have (for equidistant
+ bins) the following formula:
+\begin_inset Formula 
+\[
+I\left(x_{i},y_{j}\right)=\frac{t_{n-1}-t_{0}}{n}\cdot\sum_{t\in\left[t_{o}\ldots t_{n-1}\right]}T_{d}\left(x_{i},y_{j}t\right)
+\]
+
+\end_inset
+
+where 
+\begin_inset Formula $\frac{t_{n-1}-t_{0}}{n}$
+\end_inset
+
+ is the width of a single bin (in seconds).
+ Thus the unit of 
+\begin_inset Formula $T_{d}$
+\end_inset
+
+ is intensity per second, i.e.
+ the power.
+ The question is now, how can 
+\begin_inset Formula $T_{d}$
+\end_inset
+
+ be computed using path tracing?
+\end_layout
+
+\begin_layout Subsection
+Monte Carlo Integration
+\end_layout
+
+\begin_layout Standard
+Each pixel of 
+\begin_inset Formula $I$
+\end_inset
+
+ is computed using Monte Carlo integration.
+ Each sample is a (very rough) approximation of the real value.
+ By computing many of them and computing the average this real value can
+ be approximated with high precision.
+\end_layout
+
+\begin_layout Standard
+The geometric path length cannot be sampled directly.
+ If more samples fall in the same temporal bin, this means that more light
+ arrived at this time and thus they must be summed and not averaged.
+ Averaging is performed per spatial pixel, not per transient pixel.
+ If 100 samples are used, every temporal bin is divided by 100 and not by
+ the number of samples that actually fell into this particularly bin.
+\end_layout
+
+\begin_layout Standard
+Before a pixel is written into the bin it must be divided by the bin width.
+ Thus 
+\begin_inset Formula $T_{d}=\frac{n}{t_{n-1}-t_{0}}\cdot T_{s}$
+\end_inset
+
+.
+ This means, that 
+\begin_inset Formula $T_{d}$
+\end_inset
+
+ is (in a certain way) invariant under changes of the temporal discretization.
 \end_layout
 
 \begin_layout Section

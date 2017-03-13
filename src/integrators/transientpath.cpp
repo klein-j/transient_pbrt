@@ -216,7 +216,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 		lastPos = isect.p;
 
 		// emissive materials don't really make sense in the transient case, so we removed the code
-		// ...
+		// TODO: They do! Readd this code assap!
 
 
         // Terminate path if ray escaped or _maxDepth_ was reached

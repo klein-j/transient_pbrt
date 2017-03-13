@@ -84,6 +84,7 @@ private:
 	const Bounds2i pixelBounds;
 	const unsigned int tresolution; ///< as the t dimension is never cropped, a Bounds3i would be pointless - thus we introduce this extra parameter
 	const Float tmin, tmax;
+	const Float invBinSize; ///< 1/ the size of a time bin in m (i.e. the same unit as tmin, tmax)
 	const Vector2f filterRadius, invFilterRadius;
 	const Float *filterTable;
 	const int filterTableSize;

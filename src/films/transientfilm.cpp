@@ -214,6 +214,7 @@ TransientFilmTile::TransientFilmTile(const Bounds2i &pixelBounds, unsigned int t
 	: pixelBounds(pixelBounds),
 	tresolution(tresolution),
 	tmin(tmin), tmax(tmax),
+	invBinSize(static_cast<Float>(tresolution)/(tmax-tmin)),
 	filterRadius(filterRadius),
 	invFilterRadius(1 / filterRadius.x, 1 / filterRadius.y),
 	filterTable(filterTable),
@@ -225,7 +226,7 @@ TransientFilmTile::TransientFilmTile(const Bounds2i &pixelBounds, unsigned int t
 }
 
 
-void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float sampleWeight) {
+void TransientFilmTile::AddSample(const Point2f &pFilm, Float T, Float L, Float sampleWeight) {
 	ProfilePhase _(Prof::AddFilmSample);
 	if(L > maxSampleLuminance)
 		L = maxSampleLuminance;
@@ -239,13 +240,13 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 	p1 = Min(p1, pixelBounds.pMax);
 
 	// same for temporal dimension
-	auto timeBin = static_cast<int>( (t-tmin)/(tmax-tmin) * tresolution);
+	auto timeBin = (T-tmin) * invBinSize;
 	if(timeBin >= tresolution || timeBin < 0)
 		return; //skip these samples
 
 	auto tDiscrete = timeBin - 0.5;
-	auto t0 = static_cast<int>( ceil(timeBin-filterRadius.x));
-	auto t1 = static_cast<int>(floor(timeBin+filterRadius.x) + 1);
+	auto t0 = static_cast<int>( ceil(tDiscrete-filterRadius.x));
+	auto t1 = static_cast<int>(floor(tDiscrete+filterRadius.x) + 1);
 	t0 = std::max<int>(t0, 0);
 	t1 = std::min<int>(t1, tresolution);
 
@@ -296,7 +297,7 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float t, Float L, Float 
 			{
 				// Update pixel values with filtered sample contribution
 				auto pixel = GetPixel({x, y, t});
-				*pixel.intensity += L * sampleWeight * filterWeight * filterTable[ift[t-t0]] * temporalFilterTotalWeightInv;
+				*pixel.intensity += L * sampleWeight * filterWeight * filterTable[ift[t-t0]] * temporalFilterTotalWeightInv * invBinSize;
 			}
 			auto pixel = GetPixel({x, y, 0}); // filter weight sum is the same for all pixels with the same x,y
 			*pixel.filterWeightSum += filterWeight;
