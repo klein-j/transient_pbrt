@@ -172,6 +172,7 @@ SET ( PBRT_CORE_SOURCE
   src/core/progressreporter.cpp
   src/core/quaternion.cpp
   src/core/reflection.cpp
+  src/core/rng.cpp
   src/core/sampler.cpp
   src/core/sampling.cpp
   src/core/scene.cpp
