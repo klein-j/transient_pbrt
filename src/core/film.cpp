@@ -214,15 +214,15 @@ Film *CreateFilm(const ParamSet &params, std::unique_ptr<Filter> filter) {
     // so that the rendered image is left in the working directory, rather
     // than the directory the scene file lives in.
     std::string filename = params.FindOneString("filename", "");
-    if (PbrtOptions.imageFile != "") {
-        if (filename != "") {
-            Warning(
-                "Output filename supplied on command line, \"%s\", ignored "
-                "due to filename provided in scene description file, \"%s\".",
-                PbrtOptions.imageFile.c_str(), filename.c_str());
-        } else
-            filename = PbrtOptions.imageFile;
-    }
+	if(PbrtOptions.imageFile != "") {
+		filename = PbrtOptions.imageFile;
+		if(filename != "") {
+			Warning(
+				"Output filename supplied in scene description file, \"%s\", ignored "
+				"due to filename provided on command line, \"%s\".",
+				filename.c_str(), PbrtOptions.imageFile.c_str());
+		}
+	}
     if (filename == "") filename = "pbrt.exr";
 
     int xres = params.FindOneInt("xresolution", 1280);

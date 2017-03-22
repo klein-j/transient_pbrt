@@ -58,9 +58,17 @@ static const Float OneMinusEpsilon = DoubleOneMinusEpsilon;
 static const Float OneMinusEpsilon = FloatOneMinusEpsilon;
 #endif
 
-#define PCG32_DEFAULT_STATE 0x853c49e6748fea9bULL
-#define PCG32_DEFAULT_STREAM 0xda3e39cb94b95bdbULL
-#define PCG32_MULT 0x5851f42d4c957f2dULL
+// this should be considered const, and only changed by SetGlobalSeed()
+static auto PCG32_DEFAULT_STATE = 0x853c49e6748fea9bULL;
+const auto PCG32_DEFAULT_STREAM = 0xda3e39cb94b95bdbULL;
+const auto PCG32_MULT = 0x5851f42d4c957f2dULL;
+
+inline void SetGlobalSeed(unsigned long long seed)
+{
+	// JK: i don't really know, what i am doing here...
+	PCG32_DEFAULT_STATE = 0x853c49e6748fea9bULL * (seed+1);
+}
+
 class RNG {
   public:
     // RNG Public Methods
@@ -127,6 +135,7 @@ class RNG {
 
 // RNG Inline Method Definitions
 inline RNG::RNG() : state(PCG32_DEFAULT_STATE), inc(PCG32_DEFAULT_STREAM) {}
+
 inline void RNG::SetSequence(uint64_t initseq) {
     state = 0u;
     inc = (initseq << 1u) | 1u;

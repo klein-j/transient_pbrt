@@ -36,6 +36,7 @@
 #include "api.h"
 #include "parser.h"
 #include "parallel.h"
+#include "rng.h"
 #include <glog/logging.h>
 
 using namespace pbrt;
@@ -118,9 +119,12 @@ int main(int argc, char *argv[]) {
             FLAGS_v = atoi(argv[++i]);
         } else if (!strncmp(argv[i], "--v=", 4)) {
           FLAGS_v = atoi(argv[i] + 4);
-        }
-        else if (!strcmp(argv[i], "--logtostderr")) {
+        } else if (!strcmp(argv[i], "--logtostderr")) {
           FLAGS_logtostderr = true;
+		} else if (!strcmp(argv[i], "--seed")) {
+            if (i + 1 == argc)
+                usage("missing value after --seed argument");
+			SetGlobalSeed(atoi(argv[++i]));
         } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
                    !strcmp(argv[i], "-h")) {
             usage();
