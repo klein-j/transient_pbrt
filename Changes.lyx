@@ -602,6 +602,51 @@ TransientEstimateDirect
  changes and merge changes of the original functions in the transient ones.
 \end_layout
 
+\begin_layout Subsection
+per-instance Render options
+\end_layout
+
+\begin_layout Standard
+Monte Carlo integration can use an arbitrary amount of samples.
+ This makes an progressive rendering approach tempting, where the scene
+ is rendered multiple times with a low amount of samples, and the results
+ are stored in different files.
+ These files can later be combined to a single image with greatly reduced
+ noise.
+ This approach makes it possible, to stop the rendering process at any time
+ without loosing progress.
+\end_layout
+
+\begin_layout Standard
+However, in the default settings, pbrt uses the same samples in every run
+ and thus the noise patterns don't vary.
+ A seed parameter could be added to the file format, but this would require
+ changing the input file everytime.
+ Instead, we want to pass the seed (and the numbered output filename) as
+ command line argument.
+\end_layout
+
+\begin_layout Standard
+A nice solution would be, to first read all information of the input file
+ and then to override some of them with the command line arguments.
+ Sadly, this is not how the parsing works in pbrt, and they already use
+ global variables to specify the filename (except in the original version,
+ the filename in the input file has a higher priority, which feels strange
+ given that command line arguments are more volatile - and it is also inconvinie
+nt for us).
+ So we changed the filename priority.
+\end_layout
+
+\begin_layout Standard
+Random seeds are a bigger problem, pbrt does not support them on many levels.
+ Again, we settled for a solution, that requires little code changes and
+ works well, but is rather ugly from a design perspective: The PRNG has
+ now a global state, that can be changed on program startup.
+ I really hope, that the chosen algorithm does not rely too deeply on the
+ default initialization values and that the way we set them don't result
+ in terrible random numbers.
+\end_layout
+
 \begin_layout Section
 Limitations
 \end_layout

@@ -167,9 +167,10 @@ TransientPathIntegrator::TransientPathIntegrator(int maxDepth,
                                std::shared_ptr<Sampler> sampler,
                                const Bounds2i &pixelBounds,
 							   std::unique_ptr<TransientFilm> film,
+							   bool ignoreDistanceToCamera,
 							   Float rrThreshold,
                                const std::string &lightSampleStrategy):
-	maxDepth(maxDepth), camera(camera), sampler(sampler), pixelBounds(pixelBounds),
+	maxDepth(maxDepth), camera(camera), sampler(sampler), pixelBounds(pixelBounds), ignoreDistanceToCamera(ignoreDistanceToCamera),
 	rrThreshold(rrThreshold), lightSampleStrategy(lightSampleStrategy),
 	film(move(film))
 {
@@ -212,11 +213,18 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         bool foundIntersection = scene.Intersect(ray, &isect);
 		
 		// compute the length:
-		geometricPathLength += (isect.p-lastPos).Length();
+		if( ! (ignoreDistanceToCamera && bounces==0))
+			geometricPathLength += (isect.p-lastPos).Length();
 		lastPos = isect.p;
 
-		// emissive materials don't really make sense in the transient case, so we removed the code
-		// TODO: They do! Readd this code assap!
+        // Possibly add emitted light at intersection
+        if (bounces == 0 || specularBounce) {
+            // Add emitted light at path vertex or from the environment
+            if (foundIntersection) {
+				AddSample(beta*isect.Le(-ray.d), geometricPathLength);
+            }
+			// it does not make sense to filter infinite lights here, as they don't have a meaningful timestamp...
+        }
 
 
         // Terminate path if ray escaped or _maxDepth_ was reached
@@ -238,7 +246,6 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         if (isect.bsdf->NumComponents(BxDFType(BSDF_ALL & ~BSDF_SPECULAR)) >
             0) {
             ++totalPaths;
-			// here we should probably add the distance to the light source...
 			auto lightSample = TransientUniformSampleOneLight(isect, scene, arena,
                                                        sampler, false, distrib);
             Spectrum Ld = beta * lightSample.second;
@@ -433,7 +440,9 @@ std::unique_ptr<TransientPathIntegrator> CreateTransientPathIntegrator(const Par
     std::string lightStrategy =
         params.FindOneString("lightsamplestrategy", "spatial");
 
-	return std::make_unique<TransientPathIntegrator>(maxDepth, camera, sampler, pixelBounds, std::move(film),
+	bool ignoreDistanceToCamera = params.FindOneBool("ignoreDistanceToCamera", false);
+
+	return std::make_unique<TransientPathIntegrator>(maxDepth, camera, sampler, pixelBounds, std::move(film), ignoreDistanceToCamera,
                               rrThreshold, lightStrategy);
 }
 

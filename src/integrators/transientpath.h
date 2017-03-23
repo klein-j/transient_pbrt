@@ -27,6 +27,7 @@ public:
 							std::shared_ptr<Sampler> sampler,
 							const Bounds2i &pixelBounds,
 							std::unique_ptr<TransientFilm> film,
+							bool ignoreDistanceToCamera,
 							Float rrThreshold = 1,
 							const std::string &lightSampleStrategy = "spatial");
 
@@ -43,6 +44,7 @@ private:
 	const Bounds2i pixelBounds;
 	const Float rrThreshold;
 	const std::string lightSampleStrategy;
+	const bool ignoreDistanceToCamera;
 	
 	std::unique_ptr<LightDistribution> lightDistribution; // created during preprocessing
 
