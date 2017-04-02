@@ -55,12 +55,15 @@ TriangleMesh::TriangleMesh(
     const Transform &ObjectToWorld, int nTriangles, const int *vertexIndices,
     int nVertices, const Point3f *P, const Vector3f *S, const Normal3f *N,
     const Point2f *UV, const std::shared_ptr<Texture<Float>> &alphaMask,
-    const std::shared_ptr<Texture<Float>> &shadowAlphaMask)
+    const std::shared_ptr<Texture<Float>> &shadowAlphaMask,
+	TriangleMesh::ObjectSemantic objectSemantic)
     : nTriangles(nTriangles),
       nVertices(nVertices),
       vertexIndices(vertexIndices, vertexIndices + 3 * nTriangles),
       alphaMask(alphaMask),
-      shadowAlphaMask(shadowAlphaMask) {
+      shadowAlphaMask(shadowAlphaMask),
+	  objectSemantic(objectSemantic)
+{
     ++nMeshes;
     nTris += nTriangles;
     triMeshBytes += sizeof(*this) + (3 * nTriangles * sizeof(int)) +
@@ -91,10 +94,12 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMesh(
     bool reverseOrientation, int nTriangles, const int *vertexIndices,
     int nVertices, const Point3f *p, const Vector3f *s, const Normal3f *n,
     const Point2f *uv, const std::shared_ptr<Texture<Float>> &alphaMask,
-    const std::shared_ptr<Texture<Float>> &shadowAlphaMask) {
+    const std::shared_ptr<Texture<Float>> &shadowAlphaMask,
+	TriangleMesh::ObjectSemantic objectSemantic)
+{
     std::shared_ptr<TriangleMesh> mesh = std::make_shared<TriangleMesh>(
         *ObjectToWorld, nTriangles, vertexIndices, nVertices, p, s, n, uv,
-        alphaMask, shadowAlphaMask);
+        alphaMask, shadowAlphaMask, objectSemantic);
     std::vector<std::shared_ptr<Shape>> tris;
     tris.reserve(nTriangles);
     for (int i = 0; i < nTriangles; ++i)
@@ -608,7 +613,8 @@ Float Triangle::SolidAngle(const Point3f &p, int nSamples) const {
 std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
     const Transform *o2w, const Transform *w2o, bool reverseOrientation,
     const ParamSet &params,
-    std::map<std::string, std::shared_ptr<Texture<Float>>> *floatTextures) {
+    std::map<std::string, std::shared_ptr<Texture<Float>>> *floatTextures)
+{
     int nvi, npi, nuvi, nsi, nni;
     const int *vi = params.FindInt("indices", &nvi);
     const Point3f *P = params.FindPoint3f("P", &npi);
@@ -636,7 +642,7 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
         } else if (nuvi > npi)
             Warning(
                 "More \"uv\"s provided than will be used for triangle "
-                "mesh.  (%d expcted, %d found)",
+                "mesh.  (%d expected, %d found)",
                 npi, nuvi);
     }
     if (!vi) {
@@ -691,8 +697,11 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
     } else if (params.FindOneFloat("shadowalpha", 1.f) == 0.f)
         shadowAlphaTex.reset(new ConstantTexture<Float>(0.f));
 
+
+	auto objectSemantic = static_cast<TriangleMesh::ObjectSemantic>(params.FindOneInt("objectSemantic", 0));
+
     return CreateTriangleMesh(o2w, w2o, reverseOrientation, nvi / 3, vi, npi, P,
-                              S, N, uvs, alphaTex, shadowAlphaTex);
+                              S, N, uvs, alphaTex, shadowAlphaTex, objectSemantic);
 }
 
 }  // namespace pbrt

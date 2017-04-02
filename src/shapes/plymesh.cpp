@@ -140,7 +140,8 @@ int rply_face_callback(p_ply_argument argument) {
 std::vector<std::shared_ptr<Shape>> CreatePLYMesh(
     const Transform *o2w, const Transform *w2o, bool reverseOrientation,
     const ParamSet &params,
-    std::map<std::string, std::shared_ptr<Texture<Float>>> *floatTextures) {
+    std::map<std::string, std::shared_ptr<Texture<Float>>> *floatTextures)
+{
     const std::string filename = params.FindOneFilename("filename", "");
     p_ply ply = ply_open(filename.c_str(), rply_message_callback, 0, nullptr);
     if (!ply) {

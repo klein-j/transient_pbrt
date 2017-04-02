@@ -358,10 +358,12 @@ void TransientPathIntegrator::Render(const Scene &scene)
 						1 / std::sqrt((Float)tileSampler->samplesPerPixel));
 					++nCameraRays;
 
-
-					/* the transient integrator can't accumulate all samples along a path and return them,
-					   thus we pass a lambda to it. The code is formatted in a way that makes it very similar
-					   to the original one. */
+					/* the normal path tracer would just accumulate intensities from multiple paths and return
+						their sum. As each different path has a different length, we can't do this any more.
+						Thus we pass a lambda to the function, that allows to add contribution of all
+						subpaths one at a time.
+						The code is formatted in a way that makes it very similar
+						to the original one. */
 					// Evaluate radiance along camera ray
 					if(rayWeight > 0) Li(ray, scene, *tileSampler, arena, [&](Spectrum L, Float distance)
 					{

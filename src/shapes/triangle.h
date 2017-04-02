@@ -49,12 +49,15 @@ STAT_MEMORY_COUNTER("Memory/Triangle meshes", triMeshBytes);
 
 // Triangle Declarations
 struct TriangleMesh {
+	enum class ObjectSemantic : int { Default=0, NlosReflector=10, NlosObject=11 };
+
     // TriangleMesh Public Methods
     TriangleMesh(const Transform &ObjectToWorld, int nTriangles,
                  const int *vertexIndices, int nVertices, const Point3f *P,
                  const Vector3f *S, const Normal3f *N, const Point2f *uv,
                  const std::shared_ptr<Texture<Float>> &alphaMask,
-                 const std::shared_ptr<Texture<Float>> &shadowAlphaMask);
+                 const std::shared_ptr<Texture<Float>> &shadowAlphaMask,
+				 TriangleMesh::ObjectSemantic objectSemantic);
 
     // TriangleMesh Data
     const int nTriangles, nVertices;
@@ -64,6 +67,8 @@ struct TriangleMesh {
     std::unique_ptr<Vector3f[]> s;
     std::unique_ptr<Point2f[]> uv;
     std::shared_ptr<Texture<Float>> alphaMask, shadowAlphaMask;
+
+	ObjectSemantic objectSemantic;
 };
 
 class Triangle : public Shape {
@@ -114,7 +119,8 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMesh(
     int nTriangles, const int *vertexIndices, int nVertices, const Point3f *p,
     const Vector3f *s, const Normal3f *n, const Point2f *uv,
     const std::shared_ptr<Texture<Float>> &alphaTexture,
-    const std::shared_ptr<Texture<Float>> &shadowAlphaTexture);
+    const std::shared_ptr<Texture<Float>> &shadowAlphaTexture, TriangleMesh::ObjectSemantic objectSemantic=TriangleMesh::ObjectSemantic::Default);
+
 std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
     const Transform *o2w, const Transform *w2o, bool reverseOrientation,
     const ParamSet &params,
