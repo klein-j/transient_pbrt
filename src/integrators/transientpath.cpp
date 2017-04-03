@@ -9,6 +9,7 @@
 #include "scene.h"
 #include "stats.h"
 #include "progressreporter.h"
+#include "shapes/triangle.h" // used for specialized importance sampling
 #include <limits>
 
 namespace pbrt {
@@ -256,26 +257,35 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         }
 
         // Sample BSDF to get new path direction
-        Vector3f wo = -ray.d, wi;
-        Float pdf;
-        BxDFType flags;
-        Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdf,
-                                          BSDF_ALL, &flags);
-        VLOG(2) << "Sampled BSDF, f = " << f << ", pdf = " << pdf;
-        if (f.IsBlack() || pdf == 0.f) break;
-        beta *= f * AbsDot(wi, isect.shading.n) / pdf;
-        VLOG(2) << "Updated beta = " << beta;
-        CHECK_GE(beta.y(), 0.f);
-        DCHECK(!std::isinf(beta.y()));
-        specularBounce = (flags & BSDF_SPECULAR) != 0;
-        if ((flags & BSDF_SPECULAR) && (flags & BSDF_TRANSMISSION)) {
-            Float eta = isect.bsdf->eta;
-            // Update the term that tracks radiance scaling for refraction
-            // depending on whether the ray is entering or leaving the
-            // medium.
-            etaScale *= (Dot(wo, isect.n) > 0) ? (eta * eta) : 1 / (eta * eta);
-        }
-        ray = isect.SpawnRay(wi);
+
+		auto triangleShape = dynamic_cast<const Triangle*>(isect.shape);
+		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector) // specialized importance sampling for the wall
+		{
+			// find the object and sample it...
+		}
+		else
+		{
+			Vector3f wo = -ray.d, wi;
+			Float pdf;
+			BxDFType flags;
+			Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdf,
+											  BSDF_ALL, &flags);
+			VLOG(2) << "Sampled BSDF, f = " << f << ", pdf = " << pdf;
+			if (f.IsBlack() || pdf == 0.f) break;
+			beta *= f * AbsDot(wi, isect.shading.n) / pdf;
+			VLOG(2) << "Updated beta = " << beta;
+			CHECK_GE(beta.y(), 0.f);
+			DCHECK(!std::isinf(beta.y()));
+			specularBounce = (flags & BSDF_SPECULAR) != 0;
+			if ((flags & BSDF_SPECULAR) && (flags & BSDF_TRANSMISSION)) {
+				Float eta = isect.bsdf->eta;
+				// Update the term that tracks radiance scaling for refraction
+				// depending on whether the ray is entering or leaving the
+				// medium.
+				etaScale *= (Dot(wo, isect.n) > 0) ? (eta * eta) : 1 / (eta * eta);
+			}
+			ray = isect.SpawnRay(wi);
+		}
 		
         // currently we do not support SSS, so the code is removed
 		// ...
