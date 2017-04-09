@@ -665,26 +665,65 @@ Key observation: The scene consists solely of the wall and the object.
  majority of the samples should still be spend on the object.
 \end_layout
 
+\begin_layout Subsection
+Implementation
+\end_layout
+
+\begin_layout Itemize
+Blender objects have an additional flag 
+\family typewriter
+pbrt3_semantic
+\end_layout
+
+\begin_layout Itemize
+
+\family typewriter
+TriganleMesh
+\family default
+ has additional 
+\family typewriter
+ObjectSemantic
+\family default
+ that is loaded from the scene file
+\end_layout
+
+\begin_layout Itemize
+Scene already stores area lights for sampling.
+ Additionally now all 
+\family typewriter
+TriangleMesh
+\family default
+s with 
+\family typewriter
+NlosObject
+\family default
+ semantic are stored.
+\end_layout
+
+\begin_layout Itemize
+
+\family typewriter
+TransientPathIntegrator::Li
+\family default
+ fetches the 
+\family typewriter
+TriangleMesh
+\family default
+ from the 
+\family typewriter
+SurfaceInteraction
+\family default
+ and checks if that flag is set to 
+\family typewriter
+NlosReflector
+\end_layout
+
+\begin_layout Itemize
+The objects are sampled similar to area light source sampling
+\end_layout
+
 \begin_layout Standard
 Problems, that need to be adressed:
-\end_layout
-
-\begin_layout Itemize
-during pathtracing, how do we know, if we are on the wall or on the object?
- How do we select the sampling strategy?
-\end_layout
-
-\begin_deeper
-\begin_layout Itemize
-SurfaceInteraction should have pointers to the object.
- The object that needs to be annotated (by a special name or so) to know
- which one we are hitting
-\end_layout
-
-\end_deeper
-\begin_layout Itemize
-when sampling from the wall: how do we know, where the object is? how do
- we access its position, its extend, the objects object?
 \end_layout
 
 \begin_layout Itemize
