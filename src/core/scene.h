@@ -42,6 +42,7 @@
 #include "pbrt.h"
 #include "primitive.h"
 #include "integrator.h"
+#include "shapes/triangle.h"
 
 namespace pbrt {
 
@@ -50,16 +51,9 @@ class Scene {
   public:
     // Scene Public Methods
     Scene(std::shared_ptr<Primitive> aggregate,
-          const std::vector<std::shared_ptr<Light>> &lights)
-        : lights(lights), aggregate(aggregate) {
-        // Scene Constructor Implementation
-        worldBound = aggregate->WorldBound();
-        for (const auto &light : lights) {
-            light->Preprocess(*this);
-            if (light->flags & (int)LightFlags::Infinite)
-                infiniteLights.push_back(light);
-        }
-    }
+          const std::vector<std::shared_ptr<Light>> &lights,
+		  std::vector<std::shared_ptr<Primitive>> primitives); // from the primitives list, all NlosObject's are extracted which are later used for specialized importance sampling
+
     const Bounds3f &WorldBound() const { return worldBound; }
     bool Intersect(const Ray &ray, SurfaceInteraction *isect) const;
     bool IntersectP(const Ray &ray) const;
@@ -72,9 +66,10 @@ class Scene {
     // to loop over them.
     std::vector<std::shared_ptr<Light>> infiniteLights;
 
+	std::vector<std::shared_ptr<Triangle>> nlosObjects;
   private:
     // Scene Private Data
-    std::shared_ptr<Primitive> aggregate;
+    std::shared_ptr<Primitive> aggregate; // all the objects in the scene
     Bounds3f worldBound;
 };
 

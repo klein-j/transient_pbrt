@@ -46,6 +46,29 @@ STAT_COUNTER("Intersections/Regular ray intersection tests",
              nIntersectionTests);
 STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 
+Scene::Scene(std::shared_ptr<Primitive> aggregate,
+          const std::vector<std::shared_ptr<Light>> &lights,
+		  std::vector<std::shared_ptr<Primitive>> primitives)
+        : lights(lights), aggregate(aggregate) {
+        // Scene Constructor Implementation
+        worldBound = aggregate->WorldBound();
+        for (const auto &light : lights) {
+            light->Preprocess(*this);
+            if (light->flags & (int)LightFlags::Infinite)
+                infiniteLights.push_back(light);
+        }
+
+		// iterate over all objects in the aggregate, and save all NlosObject's
+		for(const auto& obj : primitives)
+		{
+			auto triangleShape = dynamic_cast<const Triangle*>(obj.get());
+			if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
+			{
+				nlosObjects.emplace_back(std::dynamic_pointer_cast<Triangle>(obj));
+			}
+		}
+    }
+
 // Scene Method Definitions
 bool Scene::Intersect(const Ray &ray, SurfaceInteraction *isect) const {
     ++nIntersectionTests;
