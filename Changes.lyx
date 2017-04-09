@@ -688,16 +688,25 @@ ObjectSemantic
 \end_layout
 
 \begin_layout Itemize
-Scene already stores area lights for sampling.
- Additionally now all 
+upon scene construction, the 
 \family typewriter
-TriangleMesh
+Primitive
 \family default
-s with 
+s list that is used to build the acceleration structures is passed to the
+ 
+\family typewriter
+Scene
+\family default
+ constructor and filtered for 
 \family typewriter
 NlosObject
 \family default
- semantic are stored.
+s.
+ The results are stored inside 
+\family typewriter
+Scene::nlosObjects
+\family default
+ with public access.
 \end_layout
 
 \begin_layout Itemize
@@ -719,9 +728,31 @@ NlosReflector
 \end_layout
 
 \begin_layout Itemize
-The objects are sampled similar to area light source sampling
+ObjectSampling: Starting from the wall, we need to sample NlosObjects.
+ Uniform sampling of the hemisphere should lead to the correct result, but
+ would be inefficient.
+ Directly sampling the surface area of the objects would be extremely efficient,
+ but special care must be taken for the normalization.
 \end_layout
 
+\begin_deeper
+\begin_layout Itemize
+pick a random primitive to sample by using a 
+\family typewriter
+Distribution1D
+\family default
+ (758)
+\end_layout
+
+\begin_layout Itemize
+pick a random point on the object
+\end_layout
+
+\begin_layout Itemize
+create a ray, that goes in this direction and proceed as usual
+\end_layout
+
+\end_deeper
 \begin_layout Standard
 Problems, that need to be adressed:
 \end_layout
@@ -745,10 +776,6 @@ For area sampling: can we use shape::sampleArea (as with area light sources?)
 \end_deeper
 \begin_layout Itemize
 how is the weighting computed?
-\end_layout
-
-\begin_layout Itemize
-where exactly do we place this code in the path tracer
 \end_layout
 
 \begin_layout Section

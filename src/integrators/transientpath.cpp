@@ -262,6 +262,17 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector) // specialized importance sampling for the wall
 		{
 			// find the object and sample it...
+			auto primCount = scene.nlosObjects.size();
+			auto primNum = static_cast<size_t>(sampler.Get1D() * primCount);
+			auto pdfI = Float(1) / primCount;
+			Float pdfJ;
+
+			const auto& obj = scene.nlosObjects[primNum];
+			auto sample = obj->Sample(isect, sampler.Get2D(), &pdfJ);
+
+			// this might be inefficient. also, do we need to normalize?
+			ray = isect.SpawnRay(sample.p - isect.p);
+			beta *= pdfI*pdfJ; // this must be wrong...
 		}
 		else
 		{
