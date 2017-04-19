@@ -698,7 +698,7 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMeshShape(
         shadowAlphaTex.reset(new ConstantTexture<Float>(0.f));
 
 
-	auto objectSemantic = static_cast<TriangleMesh::ObjectSemantic>(params.FindOneInt("objectSemantic", 0));
+	auto objectSemantic = static_cast<TriangleMesh::ObjectSemantic>(params.FindOneInt("ObjectSemantic", 0));
 
     return CreateTriangleMesh(o2w, w2o, reverseOrientation, nvi / 3, vi, npi, P,
                               S, N, uvs, alphaTex, shadowAlphaTex, objectSemantic);

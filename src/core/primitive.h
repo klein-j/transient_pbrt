@@ -79,6 +79,7 @@ class GeometricPrimitive : public Primitive {
           mediumInterface(mediumInterface) {}
     const AreaLight *GetAreaLight() const;
     const Material *GetMaterial() const;
+	const Shape *GetShape() const;
     void ComputeScatteringFunctions(SurfaceInteraction *isect,
                                     MemoryArena &arena, TransportMode mode,
                                     bool allowMultipleLobes) const;

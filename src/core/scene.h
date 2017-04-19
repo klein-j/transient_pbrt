@@ -66,7 +66,7 @@ class Scene {
     // to loop over them.
     std::vector<std::shared_ptr<Light>> infiniteLights;
 
-	std::vector<std::shared_ptr<Triangle>> nlosObjects;
+	std::vector<const Triangle*> nlosObjects;
   private:
     // Scene Private Data
     std::shared_ptr<Primitive> aggregate; // all the objects in the scene

@@ -61,10 +61,14 @@ Scene::Scene(std::shared_ptr<Primitive> aggregate,
 		// iterate over all objects in the aggregate, and save all NlosObject's
 		for(const auto& obj : primitives)
 		{
-			auto triangleShape = dynamic_cast<const Triangle*>(obj.get());
-			if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
+			auto gp = dynamic_cast<const GeometricPrimitive*>(obj.get());
+			if(gp)
 			{
-				nlosObjects.emplace_back(std::dynamic_pointer_cast<Triangle>(obj));
+				auto triangleShape = dynamic_cast<const Triangle*>(gp->GetShape());
+				if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
+				{
+					nlosObjects.emplace_back(triangleShape);
+				}
 			}
 		}
     }
