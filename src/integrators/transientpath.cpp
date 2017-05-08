@@ -287,7 +287,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 				if(scene.Intersect(ray, &si) && si.shape == obj)
 				{
 					occlusion = false; // end loop
-					beta *= pdfJ*pdfK;
+					beta *= Float(1)/(pdfJ*pdfK);
 				}
 				else
 				{
