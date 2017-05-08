@@ -1394,6 +1394,7 @@ void pbrtWorldEnd() {
 			const auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
 			auto logFile = std::unique_ptr<FILE, int(*)(FILE*)>(fopen(filename.c_str(), "w"), &fclose);
 			PrintStats(logFile.get());
+			ReportProfilerResults(logFile.get());
 		}
         if (!PbrtOptions.quiet) {
             PrintStats(stdout);

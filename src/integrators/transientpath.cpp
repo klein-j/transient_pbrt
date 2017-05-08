@@ -242,27 +242,13 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
             continue;
         }
 
-        const Distribution1D *distrib = lightDistribution->Lookup(isect.p);
 
-        // Sample illumination from lights to find path contribution.
-        // (But skip this for perfectly specular BSDFs.)
-        if (isect.bsdf->NumComponents(BxDFType(BSDF_ALL & ~BSDF_SPECULAR)) >
-            0) {
-            ++totalPaths;
-			auto lightSample = TransientUniformSampleOneLight(isect, scene, arena,
-                                                       sampler, false, distrib);
-            Spectrum Ld = beta * lightSample.second;
-            VLOG(2) << "Sampled direct lighting Ld = " << Ld;
-            if (Ld.IsBlack()) ++zeroRadiancePaths;
-            CHECK_GE(Ld.y(), 0.f);
-			AddSample(Ld, geometricPathLength+lightSample.first); // not sure, if it is better to always add it, or to check if it is not black
-        }
 
-        // Sample BSDF to get new path direction
-
+		// check whether we are on the reflector
 		auto triangleShape = dynamic_cast<const Triangle*>(isect.shape);
-		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector) // specialized importance sampling for the wall
+		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector)
 		{
+			//we are. now we don't need to bother computing any ligh (as there can't be any). Instead, use speicalized importance sampling to find the object
 			bool occlusion = true;
 			auto maxTries = 0;
 			while(occlusion)
@@ -300,6 +286,23 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 		}
 		else
 		{
+			// Sample illumination from lights to find path contribution.
+			// (But skip this for perfectly specular BSDFs.)
+			const Distribution1D *distrib = lightDistribution->Lookup(isect.p);
+			if (isect.bsdf->NumComponents(BxDFType(BSDF_ALL & ~BSDF_SPECULAR)) >
+				0) {
+				++totalPaths;
+				auto lightSample = TransientUniformSampleOneLight(isect, scene, arena,
+														   sampler, false, distrib);
+				Spectrum Ld = beta * lightSample.second;
+				VLOG(2) << "Sampled direct lighting Ld = " << Ld;
+				if (Ld.IsBlack()) ++zeroRadiancePaths;
+				CHECK_GE(Ld.y(), 0.f);
+				AddSample(Ld, geometricPathLength+lightSample.first); // not sure, if it is better to always add it, or to check if it is not black
+			}
+
+
+	        // Sample BSDF to get new path direction
 			Vector3f wo = -ray.d, wi;
 			Float pdf;
 			BxDFType flags;
