@@ -43,6 +43,7 @@
 #include "primitive.h"
 #include "integrator.h"
 #include "shapes/triangle.h"
+#include "sampling.h"
 
 namespace pbrt {
 
@@ -66,7 +67,9 @@ class Scene {
     // to loop over them.
     std::vector<std::shared_ptr<Light>> infiniteLights;
 
+	// explicit storage of nlos Objects for our custom importance sampling
 	std::vector<const Triangle*> nlosObjects;
+	Distribution1D nlosObjectsDistribution;
   private:
     // Scene Private Data
     std::shared_ptr<Primitive> aggregate; // all the objects in the scene

@@ -1385,8 +1385,16 @@ void pbrtWorldEnd() {
 
         if (scene && integrator) integrator->Render(*scene);
 
+
         MergeWorkerThreadStats();
         ReportThreadStats();
+		// write stats to file:
+		{
+			//auto logFile = std::make_unique(fopen((renderOptions->FilmName+".log").c_str(), "w"), &fclose);
+			const auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
+			auto logFile = std::unique_ptr<FILE, int(*)(FILE*)>(fopen(filename.c_str(), "w"), &fclose);
+			PrintStats(logFile.get());
+		}
         if (!PbrtOptions.quiet) {
             PrintStats(stdout);
             ReportProfilerResults(stdout);

@@ -17,6 +17,8 @@ namespace pbrt {
 STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
 STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
+STAT_PERCENT("Transient/Occlusion", stat_occlusion, stat_occlusionTotalPaths);
+STAT_PERCENT("Transient/RecastLimitReached", stat_recastLimitReached, stat_recastLimitBelow);
 
 
 // this function is an exact copy of EstimateDirect except for the part that computes the path length
@@ -261,18 +263,40 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 		auto triangleShape = dynamic_cast<const Triangle*>(isect.shape);
 		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector) // specialized importance sampling for the wall
 		{
-			// find the object and sample it...
-			auto primCount = scene.nlosObjects.size();
-			auto primNum = static_cast<size_t>(sampler.Get1D() * primCount);
-			auto pdfI = Float(1) / primCount;
-			Float pdfJ;
+			bool occlusion = true;
+			auto maxTries = 0;
+			while(occlusion)
+			{
+				maxTries++;
+				if(maxTries>10)
+				{
+					stat_recastLimitReached++;
+					goto breakLoop;
+				}
 
-			const auto& obj = scene.nlosObjects[primNum];
-			auto sample = obj->Sample(isect, sampler.Get2D(), &pdfJ);
+				Float pdfK;
+				auto primNum = scene.nlosObjectsDistribution.SampleDiscrete(sampler.Get1D(), &pdfK);
+				const auto& obj = scene.nlosObjects[primNum];
+				Float pdfJ;
+				auto sample = obj->Sample(isect, sampler.Get2D(), &pdfJ);
 
-			// this might be inefficient. also, do we need to normalize?
-			ray = isect.SpawnRay(sample.p - isect.p);
-			beta *= pdfI*pdfJ; // this must be wrong...
+				ray = isect.SpawnRay(Normalize(sample.p - isect.p)); // todo: is there any way to skip normalization?
+
+				//check whether this direction is unoccluded
+				SurfaceInteraction si;
+				if(scene.Intersect(ray, &si) && si.shape == obj)
+				{
+					occlusion = false; // end loop
+					beta *= pdfJ*pdfK;
+				}
+				else
+				{
+					stat_occlusion++;
+				}
+				stat_occlusionTotalPaths++;
+			}
+			stat_recastLimitBelow++;
+			breakLoop:;
 		}
 		else
 		{

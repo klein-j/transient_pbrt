@@ -518,6 +518,35 @@ By removing the splat- and SetImage functionality, TransientFilm does not
  the future.
 \end_layout
 
+\begin_layout Subsubsection
+Unused parameters warning
+\end_layout
+
+\begin_layout Standard
+pbrt will warn about not using the parameters 
+\family typewriter
+t_resolution, t_min
+\family default
+ and 
+\family typewriter
+t_max
+\family default
+.
+ This is caused by creating the superflous film object (which of course
+ does not use these parameters) as described above.
+ Fixing this warning would require not creating this object or actively
+ suppress the warning.
+ The first one is not really possible (see above), the second one would
+ require quite a hack that at this point is just not worth it.
+\end_layout
+
+\begin_layout Standard
+So for now, the warning will stay and can safely be ignored.
+ It is ultimately caused by our design descission of not changing the general
+ implementation of pbrt in a way that would allow a truely clean implementation
+ of our new features.
+\end_layout
+
 \begin_layout Subsection
 Transient Path
 \end_layout
@@ -776,6 +805,123 @@ For area sampling: can we use shape::sampleArea (as with area light sources?)
 \end_deeper
 \begin_layout Itemize
 how is the weighting computed?
+\end_layout
+
+\begin_layout Subsection
+Probabilities
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename ImportanceSampling.svg
+	width 80col%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+Special care must be taken to compute the correct probabilities for each
+ sampled point.
+ Normally, we would want to sample the hemisphere over the point 
+\begin_inset Formula $p$
+\end_inset
+
+ uniformly.
+ Instead, we can sample it non-uniformly, when every sample is weighted
+ by the reciprocal of its probability.
+\end_layout
+
+\begin_layout Standard
+Intuitively, we would try to estimate the direction and size of the object
+ and create an angular domain that is then sampled.
+ However, fitting the whole contour of the object in a small as possible
+ angular interval is difficult.
+ Instead, we can sample in the area domain and reweight the samples for
+ the angular domain.
+\end_layout
+
+\begin_layout Standard
+In the figure, two triangles with the same area but different orientations
+ are sampled with for rays (green) each.
+ It is clearly visible, that the right triangle is sampled more densly in
+ the angular domain.
+ However, the weighting factor of 
+\begin_inset Formula $\frac{\cos\theta}{r^{2}}$
+\end_inset
+
+ will compensate the increased density perfectly.
+ This distribution is actually something we don't want, instead an importance
+ sampling by light intensity would be better.
+ This is however still a good sampling distributions as it at least guarantees,
+ that each ray hits the object.
+\end_layout
+
+\begin_layout Standard
+If we sample uniformly in the area domain and apply the weighting factor,
+ we are guaranteed to compute the same result as if we would sample uniformly
+ in the angular domain.
+ The transformation can be done via 
+\begin_inset Formula $\frac{\cos\theta}{r^{2}}$
+\end_inset
+
+ which means we only need to select points uniformly distributed by area.
+ Sampling points on triangles is easy and already implemented.
+ The triangles themself must be weighted by their area and selected by an
+ arbitrary distribution, or directly sampled according to their sizes.
+ As pbrt already divides by the triangle area in the usual sampling function,
+ only the first option is viable.
+\end_layout
+
+\begin_layout Standard
+Lastly, special care must be taking concerning occlusion.
+ In the figure, a part of the rightmost triangle is occluded by another
+ triangle.
+ If point 
+\begin_inset Formula $B$
+\end_inset
+
+ is sampled, the sample must be completely discarded, as sampling in this
+ direction will result in a sampling of point 
+\begin_inset Formula $C$
+\end_inset
+
+.
+ Thus, a part of the occluding triangle would be sampled more often without
+ any compensation from an additional weight.
+ Thus, the only correct choice is to discard the sample completely.
+\end_layout
+
+\begin_layout Standard
+Thus, sampling in the area domain is possible, if the points are sampled
+ uniformly (with respect to area) and occlusion is minded.
+ The resulting distribution in the angular domain will only be close to
+ perfect, but still correct.
 \end_layout
 
 \begin_layout Section

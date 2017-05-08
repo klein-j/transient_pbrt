@@ -46,10 +46,43 @@ STAT_COUNTER("Intersections/Regular ray intersection tests",
              nIntersectionTests);
 STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 
+
+std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<Primitive>> primitives)
+{
+	std::vector<const Triangle*> result;
+	// iterate over all objects in the aggregate, and save all NlosObject's
+	for(const auto& obj : primitives)
+	{
+		auto gp = dynamic_cast<const GeometricPrimitive*>(obj.get());
+		if(gp)
+		{
+			auto triangleShape = dynamic_cast<const Triangle*>(gp->GetShape());
+			if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
+			{
+				result.emplace_back(triangleShape);
+			}
+		}
+	}
+	return result;
+}
+
+Distribution1D InitializeDistribution(std::vector<const Triangle*>& nlosObjects)
+{
+	std::vector<float> sizes;
+	for(auto& o : nlosObjects)
+	{
+		sizes.push_back(o->Area());
+	}
+	return {sizes.data(), sizes.size()};
+}
+
 Scene::Scene(std::shared_ptr<Primitive> aggregate,
           const std::vector<std::shared_ptr<Light>> &lights,
 		  std::vector<std::shared_ptr<Primitive>> primitives)
-        : lights(lights), aggregate(aggregate) {
+        : lights(lights),
+		nlosObjects(InitializeNlosObjects(primitives)),
+		nlosObjectsDistribution(InitializeDistribution(nlosObjects)),
+		aggregate(aggregate) {
         // Scene Constructor Implementation
         worldBound = aggregate->WorldBound();
         for (const auto &light : lights) {
@@ -57,20 +90,6 @@ Scene::Scene(std::shared_ptr<Primitive> aggregate,
             if (light->flags & (int)LightFlags::Infinite)
                 infiniteLights.push_back(light);
         }
-
-		// iterate over all objects in the aggregate, and save all NlosObject's
-		for(const auto& obj : primitives)
-		{
-			auto gp = dynamic_cast<const GeometricPrimitive*>(obj.get());
-			if(gp)
-			{
-				auto triangleShape = dynamic_cast<const Triangle*>(gp->GetShape());
-				if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
-				{
-					nlosObjects.emplace_back(triangleShape);
-				}
-			}
-		}
     }
 
 // Scene Method Definitions
