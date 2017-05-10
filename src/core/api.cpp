@@ -115,6 +115,24 @@
 #include <map>
 #include <stdio.h>
 
+// ---------- some time formatting stuff ---------
+#include <chrono>
+#include <time.h>
+#include <sstream>
+#include <iomanip>
+
+std::string FormatTime(std::chrono::system_clock::time_point time)
+{
+	auto ctime = std::chrono::system_clock::to_time_t(time);
+	tm b;
+	localtime_s(&b, &ctime);
+	std::stringstream ss;
+	ss  << std::setfill('0') << 1900+b.tm_year << "-" << std::setw(2) << b.tm_mon+1 << "-" << std::setw(2) << b.tm_mday << " " << b.tm_hour << ":" << std::setw(2) << b.tm_min << ":" << std::setw(2) << b.tm_sec;
+	return ss.str();
+}
+//____________________________________________
+
+
 namespace pbrt {
 
 // API Global Variables
@@ -1383,16 +1401,31 @@ void pbrtWorldEnd() {
         CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::SceneConstruction));
         ProfilerState = ProfToBits(Prof::IntegratorRender);
 
-        if (scene && integrator) integrator->Render(*scene);
+		using clock = std::chrono::high_resolution_clock;
+		auto startTime = clock::now();
 
+        if (scene && integrator) integrator->Render(*scene);
 
         MergeWorkerThreadStats();
         ReportThreadStats();
+		
+		auto endTime = clock::now();
+
 		// write stats to file:
 		{
 			//auto logFile = std::make_unique(fopen((renderOptions->FilmName+".log").c_str(), "w"), &fclose);
 			const auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
 			auto logFile = std::unique_ptr<FILE, int(*)(FILE*)>(fopen(filename.c_str(), "w"), &fclose);
+
+			std::string Log;
+			std::stringstream ss;
+			
+			ss << "Timing information:\n"
+			   << "    Start time: " << FormatTime(startTime) << "\n"
+			   << "    End time:   " << FormatTime(endTime) << "\n"
+			   << "    Total Time: " << std::chrono::duration_cast<std::chrono::seconds>(endTime-startTime).count() << " seconds\n\n";
+			fprintf(logFile.get(), ss.str().c_str());
+
 			PrintStats(logFile.get());
 			ReportProfilerResults(logFile.get());
 		}
