@@ -1413,7 +1413,6 @@ void pbrtWorldEnd() {
 
 		// write stats to file:
 		{
-			//auto logFile = std::make_unique(fopen((renderOptions->FilmName+".log").c_str(), "w"), &fclose);
 			const auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
 			auto logFile = std::unique_ptr<FILE, int(*)(FILE*)>(fopen(filename.c_str(), "w"), &fclose);
 
@@ -1421,9 +1420,17 @@ void pbrtWorldEnd() {
 			std::stringstream ss;
 			
 			ss << "Timing information:\n"
-			   << "    Start time: " << FormatTime(startTime) << "\n"
-			   << "    End time:   " << FormatTime(endTime) << "\n"
-			   << "    Total Time: " << std::chrono::duration_cast<std::chrono::seconds>(endTime-startTime).count() << " seconds\n\n";
+			   << "	Start time: " << FormatTime(startTime) << "\n"
+			   << "	End time:   " << FormatTime(endTime) << "\n"
+			   << "	Total Time: " << std::chrono::duration_cast<std::chrono::seconds>(endTime-startTime).count() << " seconds\n\n"
+			   ;
+
+			ss << "Image information:\n"
+			   << "	Image resolution:    " << renderOptions->FilmParams.FindOneInt("xresolution", -1) << " x " << renderOptions->FilmParams.FindOneInt("yresolution", -1) << "\n"
+			   << "	Temporal resolution: " << renderOptions->FilmParams.FindOneInt("tresolution", -1) << "\n"
+			   << "	Samples per pixel:   " << renderOptions->SamplerParams.FindOneInt("pixelsamples", -1) << "\n\n"
+			   ;
+
 			fprintf(logFile.get(), ss.str().c_str());
 
 			PrintStats(logFile.get());
