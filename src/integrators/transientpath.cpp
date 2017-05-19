@@ -248,7 +248,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 		auto triangleShape = dynamic_cast<const Triangle*>(isect.shape);
 		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector)
 		{
-			//we are. now we don't need to bother computing any ligh (as there can't be any). Instead, use speicalized importance sampling to find the object
+			//we are. now we don't need to bother computing any light (as there can't be any). Instead, use specialized importance sampling to find the object
 			bool occlusion = true;
 			auto maxTries = 0;
 			while(occlusion)
