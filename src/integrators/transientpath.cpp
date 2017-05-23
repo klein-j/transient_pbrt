@@ -248,6 +248,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 		auto triangleShape = dynamic_cast<const Triangle*>(isect.shape);
 		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector)
 		{
+			auto wo = -ray.d;
 			//we are. now we don't need to bother computing any light (as there can't be any). Instead, use specialized importance sampling to find the object
 			bool occlusion = true;
 			auto maxTries = 0;
@@ -260,11 +261,11 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 					goto breakLoop;
 				}
 
-				Float pdfK;
-				auto primNum = scene.nlosObjectsDistribution.SampleDiscrete(sampler.Get1D(), &pdfK);
+				Float p_Select;
+				auto primNum = scene.nlosObjectsDistribution.SampleDiscrete(sampler.Get1D(), &p_Select);
 				const auto& obj = scene.nlosObjects[primNum];
-				Float pdfJ;
-				auto sample = obj->Sample(isect, sampler.Get2D(), &pdfJ);
+				Float p_Sample;
+				auto sample = obj->Sample(isect, sampler.Get2D(), &p_Sample);
 
 				ray = isect.SpawnRay(Normalize(sample.p - isect.p)); // todo: is there any way to skip normalization?
 
@@ -272,8 +273,13 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 				SurfaceInteraction si;
 				if(scene.Intersect(ray, &si) && si.shape == obj)
 				{
+					auto wi = ray.d;
+					auto f = isect.bsdf->f(wo, wi);
+
+					beta *= f*AbsDot(wi, isect.shading.n)/(p_Sample*p_Select);
+					//ray is already set for the next iteration
+
 					occlusion = false; // end loop
-					beta *= Float(1)/(pdfJ*pdfK);
 				}
 				else
 				{
@@ -303,7 +309,8 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 
 
 	        // Sample BSDF to get new path direction
-			Vector3f wo = -ray.d, wi;
+			Vector3f wo = -ray.d;
+			Vector3f wi;
 			Float pdf;
 			BxDFType flags;
 			Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdf,

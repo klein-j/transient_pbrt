@@ -128,7 +128,8 @@ Spectrum PathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         }
 
         // Sample BSDF to get new path direction
-        Vector3f wo = -ray.d, wi;
+        Vector3f wo = -ray.d;
+		Vector3f wi;
         Float pdf;
         BxDFType flags;
         Spectrum f = isect.bsdf->Sample_f(wo, &wi, sampler.Get2D(), &pdf,

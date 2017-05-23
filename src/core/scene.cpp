@@ -49,6 +49,7 @@ STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 
 std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<Primitive>> primitives)
 {
+	bool hasNlosReflector;
 	std::vector<const Triangle*> result;
 	// iterate over all objects in the aggregate, and save all NlosObject's
 	for(const auto& obj : primitives)
@@ -57,12 +58,19 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 		if(gp)
 		{
 			auto triangleShape = dynamic_cast<const Triangle*>(gp->GetShape());
-			if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
+			if(triangleShape)
 			{
-				result.emplace_back(triangleShape);
+				if(triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
+					result.emplace_back(triangleShape);
+				else if(triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector)
+					hasNlosReflector = true;
 			}
 		}
 	}
+
+	if(hasNlosReflector && result.empty())
+		Error("NLoS reflector but no NLoS objects present in scene");
+
 	return result;
 }
 
