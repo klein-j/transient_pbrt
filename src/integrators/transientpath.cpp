@@ -186,7 +186,7 @@ void TransientPathIntegrator::Preprocess(const Scene &scene, Sampler &sampler) {
 
 
 void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
-                            Sampler &sampler, MemoryArena &arena, std::function<void(Spectrum, Float)> AddSample,
+                            Sampler &sampler, MemoryArena &arena, TransientSampleCache& cache,
                             int depth) const {
     ProfilePhase p(Prof::SamplerIntegratorLi);
     Spectrum beta(1.f);
@@ -224,7 +224,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         if (bounces == 0 || specularBounce) {
             // Add emitted light at path vertex or from the environment
             if (foundIntersection) {
-				AddSample(beta*isect.Le(-ray.d), geometricPathLength);
+				cache.push_back({beta*isect.Le(-ray.d), geometricPathLength});
             }
 			// it does not make sense to filter infinite lights here, as they don't have a meaningful timestamp...
         }
@@ -275,7 +275,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 			else
 			{
 				stat_occlusion++;
-				AddSample(0, geometricPathLength); // not sure, if it is better to always add it, or to check if it is not black
+				cache.push_back({0, geometricPathLength}); // not sure, if it is better to always add it, or to check if it is not black
 				break; // terminate the path as it is invalid from now on
 			}
 
@@ -294,7 +294,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 				VLOG(2) << "Sampled direct lighting Ld = " << Ld;
 				if (Ld.IsBlack()) ++zeroRadiancePaths;
 				CHECK_GE(Ld.y(), 0.f);
-				AddSample(Ld, geometricPathLength+lightSample.first); // not sure, if it is better to always add it, or to check if it is not black
+				cache.push_back({Ld, geometricPathLength+lightSample.first}); // not sure, if it is better to always add it, or to check if it is not black
 			}
 
 
@@ -403,46 +403,47 @@ void TransientPathIntegrator::Render(const Scene &scene)
 						1 / std::sqrt((Float)tileSampler->samplesPerPixel));
 					++nCameraRays;
 
-					/* the normal path tracer would just accumulate intensities from multiple paths and return
-						their sum. As each different path has a different length, we can't do this any more.
-						Thus we pass a lambda to the function, that allows to add contribution of all
-						subpaths one at a time.
-						The code is formatted in a way that makes it very similar
-						to the original one. */
-					// Evaluate radiance along camera ray
-					if(rayWeight > 0) Li(ray, scene, *tileSampler, arena, [&](Spectrum L, Float distance)
-					{
-						// Issue warning if unexpected radiance value returned					
-						if(L.HasNaNs()) {
-							LOG(ERROR) << StringPrintf(
-								"Not-a-number radiance value returned "
-								"for pixel (%d, %d), sample %d. Setting to black.",
-								pixel.x, pixel.y,
-								(int)tileSampler->CurrentSampleNumber());
-							L = Spectrum(0.f);
-						}
-						else if(L.y() < -1e-5) {
-							LOG(ERROR) << StringPrintf(
-								"Negative luminance value, %f, returned "
-								"for pixel (%d, %d), sample %d. Setting to black.",
-								L.y(), pixel.x, pixel.y,
-								(int)tileSampler->CurrentSampleNumber());
-							L = Spectrum(0.f);
-						}
-						else if(std::isinf(L.y())) {
-							LOG(ERROR) << StringPrintf(
-								"Infinite luminance value returned "
-								"for pixel (%d, %d), sample %d. Setting to black.",
-								pixel.x, pixel.y,
-								(int)tileSampler->CurrentSampleNumber());
-							L = Spectrum(0.f);
-						}
-						VLOG(1) << "Camera sample: " << cameraSample << " -> ray: " <<
-							ray << " -> L = " << L;
 
-						// Add camera ray's contribution to image
-						filmTile->AddSample(cameraSample.pFilm, distance, L.y(), rayWeight);
-					});
+					
+					TransientSampleCache cache;
+
+					// Evaluate radiance along camera ray
+					if(rayWeight > 0)
+						Li(ray, scene, *tileSampler, arena, cache);
+					
+					/* // loop over all samples to do this
+					// Issue warning if unexpected radiance value returned					
+					if(L.HasNaNs()) {
+						LOG(ERROR) << StringPrintf(
+							"Not-a-number radiance value returned "
+							"for pixel (%d, %d), sample %d. Setting to black.",
+							pixel.x, pixel.y,
+							(int)tileSampler->CurrentSampleNumber());
+						L = Spectrum(0.f);
+					}
+					else if(L.y() < -1e-5) {
+						LOG(ERROR) << StringPrintf(
+							"Negative luminance value, %f, returned "
+							"for pixel (%d, %d), sample %d. Setting to black.",
+							L.y(), pixel.x, pixel.y,
+							(int)tileSampler->CurrentSampleNumber());
+						L = Spectrum(0.f);
+					}
+					else if(std::isinf(L.y())) {
+						LOG(ERROR) << StringPrintf(
+							"Infinite luminance value returned "
+							"for pixel (%d, %d), sample %d. Setting to black.",
+							pixel.x, pixel.y,
+							(int)tileSampler->CurrentSampleNumber());
+						L = Spectrum(0.f);
+					}
+					VLOG(1) << "Camera sample: " << cameraSample << " -> ray: " <<
+						ray << " -> L = " << L;
+						*/
+
+					// Add camera ray's contribution to image
+					filmTile->AddSample(cameraSample.pFilm, cache, rayWeight);
+
 
 					// Free _MemoryArena_ memory from computing image sample
 					// value

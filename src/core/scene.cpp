@@ -49,7 +49,7 @@ STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 
 std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<Primitive>> primitives)
 {
-	bool hasNlosReflector;
+	bool hasNlosReflector = false;
 	std::vector<const Triangle*> result;
 	// iterate over all objects in the aggregate, and save all NlosObject's
 	for(const auto& obj : primitives)

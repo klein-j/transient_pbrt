@@ -17,7 +17,6 @@
 namespace pbrt
 {
 
-
 class TransientPathIntegrator : public Integrator
 {
 public:
@@ -35,7 +34,7 @@ public:
 	/// so that our structure is closer to the original implementation.
     void Preprocess(const Scene &scene, Sampler &sampler);
 	virtual void Li(const RayDifferential &ray, const Scene &scene, Sampler &sampler,
-	                    MemoryArena &arena, std::function<void(Spectrum, Float)> AddSample, int depth = 0) const;
+	                    MemoryArena &arena, TransientSampleCache& cache, int depth = 0) const;
 	virtual void Render(const Scene &scene);
 private:
 	const int maxDepth;

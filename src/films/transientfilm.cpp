@@ -225,10 +225,10 @@ TransientFilmTile::TransientFilmTile(const Bounds2i &pixelBounds, unsigned int t
 }
 
 
-void TransientFilmTile::AddSample(const Point2f &pFilm, Float T, Float L, Float sampleWeight) {
+void TransientFilmTile::AddSample(const Point2f &pFilm, TransientSampleCache& sample, Float sampleWeight) {
 	ProfilePhase _(Prof::AddFilmSample);
-	if(L > maxSampleLuminance)
-		L = maxSampleLuminance;
+	//if(L > maxSampleLuminance)
+	//	L = maxSampleLuminance;
 
 	// Compute sample's raster bounds
 	Point2f pFilmDiscrete = pFilm - Vector2f(0.5f, 0.5f);
@@ -238,18 +238,6 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float T, Float L, Float 
 	p0 = Max(p0, pixelBounds.pMin);
 	p1 = Min(p1, pixelBounds.pMax);
 
-	// same for temporal dimension
-	auto timeBin = (T-tmin) * invBinSize;
-	if(timeBin >= tresolution || timeBin < 0)
-		return; //skip these samples
-
-	auto tDiscrete = timeBin - 0.5;
-	auto t0 = static_cast<int>( ceil(tDiscrete-filterRadius.x));
-	auto t1 = static_cast<int>(floor(tDiscrete+filterRadius.x) + 1);
-	t0 = std::max<int>(t0, 0);
-	t1 = std::min<int>(t1, tresolution);
-
-	// Loop over filter support and add sample to pixel arrays
 
 	// Precompute $x$ and $y$ filter table offsets
 	int *ifx = ALLOCA(int, p1.x - p0.x);
@@ -265,18 +253,7 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float T, Float L, Float 
 		ify[y - p0.y] = std::min((int)std::floor(fy), filterTableSize - 1);
 	}
 
-	// precompute temporal filter table offsets
-	int *ift = ALLOCA(int, t1-t0);
-	Float temporalFilterTotalWeight = 0;
-	for(int t=t0; t<t1; ++t)
-	{
-		Float ft = std::abs((t - tDiscrete) * invFilterRadius.x *
-			filterTableSize);
-		auto offset = filterTableSize*static_cast<int>(filterTableSize/2); // to get the middle row of the filter
-		ift[t - t0] = std::min((int)std::floor(ft), filterTableSize - 1) + offset;
-		temporalFilterTotalWeight += filterTable[ift[t - t0]];
-	}
-	auto temporalFilterTotalWeightInv = 1.0 / temporalFilterTotalWeight;
+	
 
 	/*  normally the weight is stored for each pixel separately
 		and at the end, the sample sum is divided by the sum of the weights.
@@ -292,12 +269,47 @@ void TransientFilmTile::AddSample(const Point2f &pFilm, Float T, Float L, Float 
 			int offset = ify[y - p0.y] * filterTableSize + ifx[x - p0.x];
 			Float filterWeight = filterTable[offset];
 			
-			for(int t=t0; t<t1; ++t)
+
+			// now loop over all the sub samples
+			for(auto& s : sample)
 			{
-				// Update pixel values with filtered sample contribution
-				auto pixel = GetPixel({x, y, t});
-				*pixel.intensity += L * sampleWeight * filterWeight * filterTable[ift[t-t0]] * temporalFilterTotalWeightInv * invBinSize;
+				auto T = s.second;
+				auto L = s.first;
+
+				// same for temporal dimension
+				auto timeBin = (T-tmin) * invBinSize;
+				if(timeBin >= tresolution || timeBin < 0)
+					continue; //skip these samples
+
+				auto tDiscrete = timeBin - 0.5;
+				auto t0 = static_cast<int>( ceil(tDiscrete-filterRadius.x));
+				auto t1 = static_cast<int>(floor(tDiscrete+filterRadius.x) + 1);
+				t0 = std::max<int>(t0, 0);
+				t1 = std::min<int>(t1, tresolution);
+
+
+				// precompute temporal filter table offsets
+				int *ift = ALLOCA(int, t1-t0);
+				Float temporalFilterTotalWeight = 0;
+				for(int t=t0; t<t1; ++t)
+				{
+					Float ft = std::abs((t - tDiscrete) * invFilterRadius.x *
+						filterTableSize);
+					auto offset = filterTableSize*static_cast<int>(filterTableSize/2); // to get the middle row of the filter
+					ift[t - t0] = std::min((int)std::floor(ft), filterTableSize - 1) + offset;
+					temporalFilterTotalWeight += filterTable[ift[t - t0]];
+				}
+				auto temporalFilterTotalWeightInv = 1.0 / temporalFilterTotalWeight;
+
+				for(int t=t0; t<t1; ++t)
+				{
+					// Update pixel values with filtered sample contribution
+					auto pixel = GetPixel({x, y, t});
+					*pixel.intensity += L.y() * sampleWeight * filterWeight * filterTable[ift[t-t0]] * temporalFilterTotalWeightInv * invBinSize;
+				}
 			}
+			
+
 			auto pixel = GetPixel({x, y, 0}); // filter weight sum is the same for all pixels with the same x,y
 			*pixel.filterWeightSum += filterWeight;
 		}

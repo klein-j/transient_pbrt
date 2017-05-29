@@ -11,8 +11,54 @@
 #include "filter.h"
 #include "stats.h"
 #include "parallel.h"
+#include <utility> // for pair
+#include <array>
 
 namespace pbrt {
+
+	
+
+/* the normal path tracer would just accumulate intensities from multiple paths and return
+	their sum. As each different path has a different length, we can't do this any more.
+	Thus we create a cache that stores multiple intensities and their path lengths */
+
+class TransientSampleCache
+{
+public:
+	static const unsigned int maxSize = 7;
+
+	/// a spectrum with a path length
+	using TransientSample = std::pair<Spectrum, float>;
+
+	// might be faster than a dynamic array, as it resides on the stack
+	std::array<TransientSample, maxSize> cache;
+
+	void push_back(TransientSample sample)
+	{
+		if(numSamples-1 == maxSize)
+			LOG(ERROR) << "SampleCache overrun";
+		cache[numSamples] = sample;
+		numSamples++;
+	}
+
+	unsigned int size()
+	{
+		return numSamples;
+	}
+
+private:
+	unsigned int numSamples = 0;
+};
+
+inline TransientSampleCache::TransientSample* begin(TransientSampleCache& c)
+{
+	return &c.cache[0];
+}
+
+inline TransientSampleCache::TransientSample* end(TransientSampleCache& c)
+{
+	return &c.cache[c.size()];
+}
 
 
 class TransientFilmTile;
@@ -73,7 +119,7 @@ public:
 		const Float *filterTable, int filterTableSize,
 		Float maxSampleLuminance);
 
-	void AddSample(const Point2f &pFilm, Float t, Float L,
+	void AddSample(const Point2f &pFilm, TransientSampleCache& sample,
 		Float sampleWeight = 1.);
 
 	TransientPixelRef GetPixel(const Point3i &p);
