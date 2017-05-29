@@ -963,5 +963,43 @@ Make sure, that introducing the temporal filter did not change any intensity
  them.
 \end_layout
 
+\begin_layout Subsection
+temporal cut of
+\end_layout
+
+\begin_layout Standard
+What do we do with paths, that are outside our ROI? If we just ignore them,
+ they still had a nonzero probability of occuring, thus our overal weight
+ might be wrong.
+\end_layout
+
+\begin_layout Section
+Bugs
+\end_layout
+
+\begin_layout Subsection
+Intensity drop
+\end_layout
+
+\begin_layout Standard
+For normal sampling, the image sometimes depends on the time interval of
+ the output.
+ The waves experience a massive intensity drop towards the edges of the
+ image which has a circular outline.
+ This only happens for the normal sampling.
+\end_layout
+
+\begin_layout Subsection
+Ray length dependencies
+\end_layout
+
+\begin_layout Standard
+When the maximum path tracing depth is changed, the intensity of the primary
+ peak changes slightly.
+ Even worse, it increases for fewer samples.
+ We would expect to see new higher order bounces and thus a sligth increase
+ in the integrated intensity, but certainly not this.
+\end_layout
+
 \end_body
 \end_document

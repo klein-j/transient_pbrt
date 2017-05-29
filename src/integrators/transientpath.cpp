@@ -248,47 +248,37 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 		auto triangleShape = dynamic_cast<const Triangle*>(isect.shape);
 		if(triangleShape && triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector)
 		{
+			stat_occlusionTotalPaths++;
 			auto wo = -ray.d;
+
 			//we are. now we don't need to bother computing any light (as there can't be any). Instead, use specialized importance sampling to find the object
-			bool occlusion = true;
-			auto maxTries = 0;
-			while(occlusion)
+
+
+			Float p_Select;
+			auto primNum = scene.nlosObjectsDistribution.SampleDiscrete(sampler.Get1D(), &p_Select);
+			const auto& obj = scene.nlosObjects[primNum];
+			Float p_Sample;
+			auto sample = obj->Sample(isect, sampler.Get2D(), &p_Sample);
+
+			ray = isect.SpawnRay(Normalize(sample.p - isect.p)); // todo: is there any way to skip normalization?
+
+			//check whether this direction is unoccluded
+			SurfaceInteraction si;
+			if(scene.Intersect(ray, &si) && si.shape == obj)
 			{
-				maxTries++;
-				if(maxTries>10)
-				{
-					stat_recastLimitReached++;
-					goto breakLoop;
-				}
+				auto wi = ray.d;
+				auto f = isect.bsdf->f(wo, wi);
 
-				Float p_Select;
-				auto primNum = scene.nlosObjectsDistribution.SampleDiscrete(sampler.Get1D(), &p_Select);
-				const auto& obj = scene.nlosObjects[primNum];
-				Float p_Sample;
-				auto sample = obj->Sample(isect, sampler.Get2D(), &p_Sample);
-
-				ray = isect.SpawnRay(Normalize(sample.p - isect.p)); // todo: is there any way to skip normalization?
-
-				//check whether this direction is unoccluded
-				SurfaceInteraction si;
-				if(scene.Intersect(ray, &si) && si.shape == obj)
-				{
-					auto wi = ray.d;
-					auto f = isect.bsdf->f(wo, wi);
-
-					beta *= f*AbsDot(wi, isect.shading.n)/(p_Sample*p_Select);
-					//ray is already set for the next iteration
-
-					occlusion = false; // end loop
-				}
-				else
-				{
-					stat_occlusion++;
-				}
-				stat_occlusionTotalPaths++;
+				beta *= f*AbsDot(wi, isect.shading.n)/(p_Sample*p_Select);
+				//ray is already set for the next iteration
 			}
-			stat_recastLimitBelow++;
-			breakLoop:;
+			else
+			{
+				stat_occlusion++;
+				AddSample(0, geometricPathLength); // not sure, if it is better to always add it, or to check if it is not black
+				break; // terminate the path as it is invalid from now on
+			}
+
 		}
 		else
 		{
