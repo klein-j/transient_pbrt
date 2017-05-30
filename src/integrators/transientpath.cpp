@@ -224,7 +224,8 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         if (bounces == 0 || specularBounce) {
             // Add emitted light at path vertex or from the environment
             if (foundIntersection) {
-				cache.push_back({beta*isect.Le(-ray.d), geometricPathLength});
+				// actually, we right now don't want to see the laser spot
+				//cache.push_back({beta*isect.Le(-ray.d), geometricPathLength});
             }
 			// it does not make sense to filter infinite lights here, as they don't have a meaningful timestamp...
         }

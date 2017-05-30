@@ -924,6 +924,22 @@ Thus, sampling in the area domain is possible, if the points are sampled
  perfect, but still correct.
 \end_layout
 
+\begin_layout Subsection
+NLoS object selection
+\end_layout
+
+\begin_layout Standard
+Not all parts of an object are visible from the reflector.
+ So we only add those triangles to the list, that are potentially visible.
+\end_layout
+
+\begin_layout Standard
+All reflector vertices are collected in a set.
+ For every object triangle it is checked whether at least one of them is
+ in fornt of the plane defined by this triangle.
+ In this case, it is potentially visible.
+\end_layout
+
 \begin_layout Section
 Limitations
 \end_layout
@@ -973,12 +989,40 @@ What do we do with paths, that are outside our ROI? If we just ignore them,
  might be wrong.
 \end_layout
 
+\begin_layout Subsection
+NLOS Object sorting
+\end_layout
+
+\begin_layout Standard
+Triangles that are not visible from the wall (determined by normal vector)
+ should not added to the list to improve efficiency.
+\end_layout
+
+\begin_layout Subsection
+MaxDepth error handling
+\end_layout
+
+\begin_layout Standard
+For subpaths cache the fixed limit of rays should handled properly.
+ Right now it seems, that it just crashed, without showing you the nice
+ error message that we wrote.
+\end_layout
+
+\begin_layout Subsection
+Laser spot
+\end_layout
+
+\begin_layout Standard
+add option whether or not the laser spot should be visible (enable / disable
+ direct emission at the intersection point)
+\end_layout
+
 \begin_layout Section
 Bugs
 \end_layout
 
 \begin_layout Subsection
-Intensity drop
+Intensity drop (solved but not understood)
 \end_layout
 
 \begin_layout Standard
@@ -987,6 +1031,17 @@ For normal sampling, the image sometimes depends on the time interval of
  The waves experience a massive intensity drop towards the edges of the
  image which has a circular outline.
  This only happens for the normal sampling.
+\end_layout
+
+\begin_layout Standard
+The issue was solved (rev 
+\family typewriter
+4f2c48a6971aff6e9a8e959affcfa11469369aee
+\family default
+) by accumulating all sub paths into a single pixel so that the total sample
+ weight does not depend on the number of subpaths.
+ This is analogue to vanilla path tracer, though I'm not completely sure,
+ why this is the right way of doing it.
 \end_layout
 
 \begin_layout Subsection

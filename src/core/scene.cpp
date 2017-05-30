@@ -49,7 +49,81 @@ STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 
 std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<Primitive>> primitives)
 {
-	bool hasNlosReflector = false;
+	/*
+	As an optimization, only those NlosObjects that are visible from a NlosReflector are added to the list.
+	Each triangle represents a plane. If all points of all reflectors are behind this plane, the triangle is not visible.
+
+	More precisely:
+	- if all points are on the same side of the plane, the whole convex hull of those points is on one side of the plane
+	- the reflector lies in the convex hull, thus all of it is on the same sides
+
+	*/
+
+	// fetch all Reflector vertices
+	std::vector<Point3f> reflectorVertices;
+	for(const auto& obj : primitives)
+	{
+		auto gp = dynamic_cast<const GeometricPrimitive*>(obj.get());
+		if(gp)
+		{
+			auto triangleShape = dynamic_cast<const Triangle*>(gp->GetShape());
+			if(triangleShape)
+			{
+				if(triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector)
+				{
+					auto& p = triangleShape->GetMesh()->p;
+					auto& v = triangleShape->v;
+					auto& transf = *triangleShape->ObjectToWorld;
+					reflectorVertices.insert(reflectorVertices.end(), {transf(p[v[0]]), transf(p[v[1]]), transf(p[v[2]])});
+				}
+			}
+		}
+	}
+
+
+	// visibility test:
+	auto CheckVisibility = [&reflectorVertices](const pbrt::Triangle* triangle)
+	{
+		auto& p = triangle->GetMesh()->p;
+		auto& n = triangle->GetMesh()->n;
+		auto& v = triangle->v;
+		auto& transf = *triangle->ObjectToWorld;
+
+		auto p0=Vector3f(transf(p[v[0]]));
+		auto p1=Vector3f(transf(p[v[1]]));
+		auto p2=Vector3f(transf(p[v[2]]));
+		auto n0=Vector3f(transf(n[v[0]]));
+		auto n1=Vector3f(transf(n[v[1]]));
+		auto n2=Vector3f(transf(n[v[2]]));
+
+		// compute plane
+		auto N = Cross(p0-p1, p0-p2); // we could normalize n - but we do not have to :)
+		auto offset = Dot(N, p0);
+
+		if(Dot(p0+n0, N) < offset) // normal vector is facing downwards
+		{
+			//flip plane
+			N = -N;
+			offset = -offset;
+		}
+
+		if(Dot(p1+n1, N)<offset || Dot(p2+n2, N)<offset)
+		{
+			Error("inkonsistent triangle normals");
+		}
+
+		//test all reflector vertices against the plane:
+		for(auto& v : reflectorVertices)
+		{
+			if(Dot(Vector3f(v), N) > offset)
+				return true;
+		}
+
+		return false;
+	};
+
+
+
 	std::vector<const Triangle*> result;
 	// iterate over all objects in the aggregate, and save all NlosObject's
 	for(const auto& obj : primitives)
@@ -61,14 +135,15 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 			if(triangleShape)
 			{
 				if(triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosObject)
-					result.emplace_back(triangleShape);
-				else if(triangleShape->GetMesh()->objectSemantic == TriangleMesh::ObjectSemantic::NlosReflector)
-					hasNlosReflector = true;
+				{
+					if(CheckVisibility(triangleShape))
+						result.emplace_back(triangleShape);
+				}
 			}
 		}
 	}
 
-	if(hasNlosReflector && result.empty())
+	if(!reflectorVertices.empty() && result.empty())
 		Error("NLoS reflector but no NLoS objects present in scene");
 
 	return result;

@@ -96,6 +96,8 @@ class Triangle : public Shape {
     Float SolidAngle(const Point3f &p, int nSamples = 0) const;
 
 	const TriangleMesh* GetMesh() const { return mesh.get(); }
+
+    const int *v; // we need access to this
   private:
     // Triangle Private Methods
     void GetUVs(Point2f uv[3]) const {
@@ -112,7 +114,6 @@ class Triangle : public Shape {
 
     // Triangle Private Data
     std::shared_ptr<TriangleMesh> mesh;
-    const int *v;
 };
 
 std::vector<std::shared_ptr<Shape>> CreateTriangleMesh(
