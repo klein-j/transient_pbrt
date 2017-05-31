@@ -276,7 +276,7 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 			else
 			{
 				stat_occlusion++;
-				cache.push_back({0, geometricPathLength}); // not sure, if it is better to always add it, or to check if it is not black
+				// at this point we should add a zero sample in theory - but as all samples are collected in the cache, we will always return something (even if it is empty), so we are fine
 				break; // terminate the path as it is invalid from now on
 			}
 

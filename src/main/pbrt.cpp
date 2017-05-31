@@ -92,6 +92,7 @@ int main(int argc, char *argv[]) {
             options.imageFile = argv[++i];
         } else if (!strncmp(argv[i], "--outfile=", 10)) {
             options.imageFile = &argv[i][10];
+
         } else if (!strcmp(argv[i], "--logdir") || !strcmp(argv[i], "-logdir")) {
             if (i + 1 == argc)
                 usage("missing value after --logdir argument");
@@ -105,6 +106,7 @@ int main(int argc, char *argv[]) {
             FLAGS_minloglevel = atoi(argv[++i]);
         } else if (!strncmp(argv[i], "--minloglevel=", 14)) {
             FLAGS_minloglevel = atoi(&argv[i][14]);
+
         } else if (!strcmp(argv[i], "--quick") || !strcmp(argv[i], "-quick")) {
             options.quickRender = true;
         } else if (!strcmp(argv[i], "--quiet") || !strcmp(argv[i], "-quiet")) {
