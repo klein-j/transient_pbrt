@@ -80,7 +80,7 @@ public:
 	TransientFilm(const Point3i &resolution, Float tmin, Float tmax,
 		const Bounds2f &cropWindow,
 		std::unique_ptr<Filter> filter, Float diagonal,
-		const std::string &filename, Float scale,
+		const std::string &filename,
 		Float maxSampleLuminance = Infinity);
 	Bounds2i GetSampleBounds() const;
 	Bounds2f GetPhysicalExtent() const;
@@ -104,7 +104,6 @@ private:
 	static PBRT_CONSTEXPR int filterTableWidth = 16;
 	Float filterTable[filterTableWidth * filterTableWidth];
 	std::mutex mutex;
-	const Float scale;
 	const Float maxSampleLuminance;
 
 

@@ -15,13 +15,12 @@ STAT_MEMORY_COUNTER("Memory/Film pixels", filmPixelMemory);
 TransientFilm::TransientFilm(const Point3i &resolution, Float tmin, Float tmax,
 	const Bounds2f &cropWindow,
 	std::unique_ptr<Filter> filt, Float diagonal,
-	const std::string &filename, Float scale, Float maxSampleLuminance)
+	const std::string &filename, Float maxSampleLuminance)
 	: fullResolution(resolution),
 	tmin(tmin), tmax(tmax),
 	diagonal(diagonal * .001),
 	filter(std::move(filt)),
 	filename(filename),
-	scale(scale),
 	maxSampleLuminance(maxSampleLuminance)
 {
 	// Compute film image bounds
@@ -90,7 +89,7 @@ void TransientFilm::MergeFilmTile(std::unique_ptr<TransientFilmTile> tile) {
 		for(auto t=0; t<fullResolution.z; ++t) {
 			// Merge _pixel_ into _Film::pixels_
 			const auto& tilePixel = tile->GetPixel({pixel.x, pixel.y, t});
-			auto& mergePixel = GetPixel({pixel.x, pixel.y, t});
+			auto mergePixel = GetPixel({pixel.x, pixel.y, t});
 
 			*mergePixel.intensity += *tilePixel.intensity;
 			*mergePixel.filterWeightSum += *tilePixel.filterWeightSum;
@@ -192,12 +191,11 @@ std::unique_ptr<TransientFilm> CreateTransientFilm(const ParamSet &params, std::
 	Float tmin = params.FindOneFloat("t_min", 0);
 	Float tmax = params.FindOneFloat("t_max", 100);
 
-	Float scale = params.FindOneFloat("scale", 1.);
 	Float diagonal = params.FindOneFloat("diagonal", 35.);
 	Float maxSampleLuminance = params.FindOneFloat("maxsampleluminance",
 		Infinity);
 	return std::make_unique<TransientFilm>(Point3i(xres, yres, tres), tmin, tmax, crop, std::move(filter), diagonal,
-		filename, scale, maxSampleLuminance);
+		filename, maxSampleLuminance);
 }
 
 
