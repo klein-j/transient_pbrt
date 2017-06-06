@@ -1414,7 +1414,11 @@ void pbrtWorldEnd() {
 
 		// write stats to file:
 		{
-			const auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
+			auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
+			if(PbrtOptions.imageFile != "")
+			{
+				filename = PbrtOptions.imageFile+".log";
+			}
 			auto logFile = std::unique_ptr<FILE, int(*)(FILE*)>(fopen(filename.c_str(), "w"), &fclose);
 
 			std::string Log;
