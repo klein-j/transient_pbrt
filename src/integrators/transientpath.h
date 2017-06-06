@@ -1,8 +1,8 @@
 
 #if defined(_MSC_VER)
 #define NOMINMAX
-#pragma once
 #endif
+#pragma once
 
 #ifndef PBRT_INTEGRATORS_TRANSIENTPATH_H
 #define PBRT_INTEGRATORS_TRANSIENTPATH_H

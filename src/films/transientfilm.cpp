@@ -11,6 +11,18 @@ namespace pbrt {
 
 STAT_MEMORY_COUNTER("Memory/Film pixels", filmPixelMemory);
 
+
+TransientSampleCache::TransientSample* begin(TransientSampleCache& c)
+{
+	return &c.cache[0];
+}
+
+TransientSampleCache::TransientSample* end(TransientSampleCache& c)
+{
+	return &c.cache[c.size()];
+}
+
+
 // Film Method Definitions
 TransientFilm::TransientFilm(const Point3i &resolution, Float tmin, Float tmax,
 	const Bounds2f &cropWindow,

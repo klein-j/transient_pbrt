@@ -1,8 +1,8 @@
 
 #if defined(_MSC_VER)
 #define NOMINMAX
-#pragma once
 #endif
+#pragma once
 
 
 #include "pbrt.h"
@@ -50,15 +50,8 @@ private:
 	unsigned int numSamples = 0;
 };
 
-inline TransientSampleCache::TransientSample* begin(TransientSampleCache& c)
-{
-	return &c.cache[0];
-}
-
-inline TransientSampleCache::TransientSample* end(TransientSampleCache& c)
-{
-	return &c.cache[c.size()];
-}
+TransientSampleCache::TransientSample* begin(TransientSampleCache& c);
+TransientSampleCache::TransientSample* end(TransientSampleCache& c);
 
 
 class TransientFilmTile;
