@@ -47,6 +47,13 @@ STAT_COUNTER("Intersections/Regular ray intersection tests",
 STAT_COUNTER("Intersections/Shadow ray intersection tests", nShadowTests);
 
 
+
+std::string to_string(const pbrt::Vector3f& v)
+{
+	using std::to_string;
+	return to_string(v.x) + "/" + to_string(v.y) + "/" + to_string(v.z);
+}
+
 std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<Primitive>> primitives)
 {
 	/*
@@ -109,7 +116,7 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 
 		if(Dot(p1+n1, N)<offset || Dot(p2+n2, N)<offset)
 		{
-			Error("inkonsistent triangle normals");
+			Error(("inconsistent triangle normals: ["+to_string(p0) + "] / ["+to_string(p1)+"] / ["+to_string(p2)+"]").c_str());
 		}
 
 		//test all reflector vertices against the plane:

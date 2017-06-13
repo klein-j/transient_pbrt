@@ -19,7 +19,7 @@ TransientSampleCache::TransientSample* begin(TransientSampleCache& c)
 
 TransientSampleCache::TransientSample* end(TransientSampleCache& c)
 {
-	return &c.cache[c.size()];
+	return &c.cache[0]+c.size();
 }
 
 

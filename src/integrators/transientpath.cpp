@@ -286,8 +286,8 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
 			// Sample illumination from lights to find path contribution.
 			// (But skip this for perfectly specular BSDFs.)
 			const Distribution1D *distrib = lightDistribution->Lookup(isect.p);
-			if (isect.bsdf->NumComponents(BxDFType(BSDF_ALL & ~BSDF_SPECULAR)) >
-				0) {
+			if(isect.bsdf->NumComponents(BxDFType(BSDF_ALL & ~BSDF_SPECULAR)) > 0)
+			{
 				++totalPaths;
 				auto lightSample = TransientUniformSampleOneLight(isect, scene, arena,
 														   sampler, false, distrib);

@@ -36,7 +36,10 @@ public:
 	void push_back(TransientSample sample)
 	{
 		if(numSamples-1 == maxSize)
+		{
 			LOG(ERROR) << "SampleCache overrun";
+			return;
+		}
 		cache[numSamples] = sample;
 		numSamples++;
 	}
