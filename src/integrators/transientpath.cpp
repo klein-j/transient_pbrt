@@ -191,7 +191,6 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
     ProfilePhase p(Prof::SamplerIntegratorLi);
     Spectrum beta(1.f);
 	float geometricPathLength = 0.f; // which correlates with the travel time of the light
-	Point3f lastPos = r.o;
     RayDifferential ray(r);
     bool specularBounce = false;
     int bounces;
@@ -209,16 +208,13 @@ void TransientPathIntegrator::Li(const RayDifferential &r, const Scene &scene,
         VLOG(2) << "Path tracer bounce " << bounces << ", current geometricPathLength = " << geometricPathLength
                 << ", beta = " << beta;
 
-		lastPos = ray.o;
-
         // Intersect _ray_ with scene and store intersection in _isect_
         SurfaceInteraction isect;
         bool foundIntersection = scene.Intersect(ray, &isect);
 		
 		// compute the length:
 		if( ! (ignoreDistanceToCamera && bounces==0))
-			geometricPathLength += (isect.p-lastPos).Length();
-		lastPos = isect.p;
+			geometricPathLength += (isect.p-ray.o).Length();
 
         // Possibly add emitted light at intersection
         if (bounces == 0 || specularBounce) {

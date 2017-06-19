@@ -186,6 +186,7 @@ Scene::Scene(std::shared_ptr<Primitive> aggregate,
 bool Scene::Intersect(const Ray &ray, SurfaceInteraction *isect) const {
     ++nIntersectionTests;
     DCHECK_NE(ray.d, Vector3f(0,0,0));
+	ray.tMax = Infinity;
     return aggregate->Intersect(ray, isect);
 }
 
