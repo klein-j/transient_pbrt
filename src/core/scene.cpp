@@ -193,14 +193,12 @@ bool Scene::Intersect(const Ray &ray, SurfaceInteraction *isect) const {
 bool Scene::IntersectP(const Ray &ray) const {
     ++nShadowTests;
     DCHECK_NE(ray.d, Vector3f(0,0,0));
-	ray.tMax = Infinity;
     return aggregate->IntersectP(ray);
 }
 
 bool Scene::IntersectTr(Ray ray, Sampler &sampler, SurfaceInteraction *isect,
                         Spectrum *Tr) const {
     *Tr = Spectrum(1.f);
-	ray.tMax = Infinity;
     while (true) {
         bool hitSurface = Intersect(ray, isect);
         // Accumulate beam transmittance for ray segment
