@@ -113,8 +113,8 @@ void TransientFilm::MergeFilmTile(std::unique_ptr<TransientFilmTile> tile) {
 // i wanted to have this as a local struct, but apparently a compiler bug in VC 12 prohibits it.
 struct Header
 {
-	const std::array<char, 4> MagicValue = std::array<char, 4>({'T', 'I', '0', '0'});
-	unsigned int xres=0, yres=0, tres=0;
+	const std::array<char, 4> MagicValue = std::array<char, 4>({'T', 'I', '0', '1'});
+	unsigned int tres=0, xres=0, yres=0;
 	float tmin=0, tmax=0;
 } header;
 
@@ -145,9 +145,9 @@ void TransientFilm::WriteImage() {
 	fstream imageFile(filename, ios_base::out | ios_base::binary | ios_base::trunc);
 
 	// write simple header:
+	header.tres = fullResolution.z;
 	header.xres = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x;
 	header.yres = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
-	header.tres = fullResolution.z;
 	header.tmin = tmin;
 	header.tmax = tmax;
 
