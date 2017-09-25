@@ -1395,6 +1395,7 @@ void pbrtWorldEnd() {
     }
 
     // Create scene and render
+	auto startTime = std::chrono::system_clock::now();
     if (PbrtOptions.cat || PbrtOptions.toPly) {
         printf("%*sWorldEnd\n", catIndentCount, "");
     } else {
@@ -1410,8 +1411,6 @@ void pbrtWorldEnd() {
         CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::SceneConstruction));
         ProfilerState = ProfToBits(Prof::IntegratorRender);
 
-		using clock = std::chrono::high_resolution_clock;
-		auto startTime = clock::now();
 
         if (scene && integrator) integrator->Render(*scene);
 
@@ -1431,7 +1430,7 @@ void pbrtWorldEnd() {
         MergeWorkerThreadStats();
         ReportThreadStats();
 		
-		auto endTime = clock::now();
+		auto endTime = std::chrono::system_clock::now();
 
 		// write stats to file:
 		{

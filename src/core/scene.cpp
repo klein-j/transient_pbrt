@@ -163,7 +163,7 @@ Distribution1D InitializeDistribution(std::vector<const Triangle*>& nlosObjects)
 	{
 		sizes.push_back(o->Area());
 	}
-	return {sizes.data(), sizes.size()};
+	return {sizes.data(), static_cast<int>(sizes.size())};
 }
 
 Scene::Scene(std::shared_ptr<Primitive> aggregate,

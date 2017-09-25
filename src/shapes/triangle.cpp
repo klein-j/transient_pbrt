@@ -99,7 +99,7 @@ std::vector<std::shared_ptr<Shape>> CreateTriangleMesh(
     int nVertices, const Point3f *p, const Vector3f *s, const Normal3f *n,
     const Point2f *uv, const std::shared_ptr<Texture<Float>> &alphaMask,
     const std::shared_ptr<Texture<Float>> &shadowAlphaMask,
-    const int *faceIndices)
+    const int *faceIndices,
 	TriangleMesh::ObjectSemantic objectSemantic)
 {
     std::shared_ptr<TriangleMesh> mesh = std::make_shared<TriangleMesh>(
