@@ -550,7 +550,7 @@ SET(ALL_PBRT_LIBS
 ADD_EXECUTABLE ( pbrt_exe src/main/pbrt.cpp )
 ADD_SANITIZERS ( pbrt_exe )
 
-SET_TARGET_PROPERTIES ( pbrt_exe PROPERTIES OUTPUT_NAME pbrt )
+SET_TARGET_PROPERTIES ( pbrt_exe PROPERTIES OUTPUT_NAME TransientRenderer )
 TARGET_COMPILE_FEATURES ( pbrt_exe PRIVATE ${PBRT_CXX11_FEATURES} )
 TARGET_LINK_LIBRARIES ( pbrt_exe ${ALL_PBRT_LIBS} )
 
@@ -587,10 +587,9 @@ ADD_TEST ( pbrt_unit_test pbrt_test )
 
 # Installation
 
-INSTALL ( TARGETS
+INSTALL( TARGETS
   pbrt_exe
-  cyhair2pbrt
   DESTINATION
   ./
-  )
+)
   
