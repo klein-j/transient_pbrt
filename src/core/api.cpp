@@ -68,6 +68,7 @@
 #include "lights/point.h"
 #include "lights/projection.h"
 #include "lights/spot.h"
+#include "materials/disney.h"
 #include "materials/fourier.h"
 #include "materials/glass.h"
 #include "materials/hair.h"
@@ -107,6 +108,7 @@
 #include "textures/imagemap.h"
 #include "textures/marble.h"
 #include "textures/mix.h"
+#include "textures/ptex.h"
 #include "textures/scale.h"
 #include "textures/uv.h"
 #include "textures/windy.h"
@@ -442,6 +444,8 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateMirrorMaterial(mp);
     else if (name == "hair")
         material = CreateHairMaterial(mp);
+    else if (name == "disney")
+        material = CreateDisneyMaterial(mp);
     else if (name == "mix") {
         std::string m1 = mp.FindString("namedmaterial1", "");
         std::string m2 = mp.FindString("namedmaterial2", "");
@@ -519,6 +523,8 @@ std::shared_ptr<Texture<Float>> MakeFloatTexture(const std::string &name,
         tex = CreateMarbleFloatTexture(tex2world, tp);
     else if (name == "windy")
         tex = CreateWindyFloatTexture(tex2world, tp);
+    else if (name == "ptex")
+        tex = CreatePtexFloatTexture(tex2world, tp);
     else
         Warning("Float texture \"%s\" unknown.", name.c_str());
     tp.ReportUnused();
@@ -553,6 +559,8 @@ std::shared_ptr<Texture<Spectrum>> MakeSpectrumTexture(
         tex = CreateMarbleSpectrumTexture(tex2world, tp);
     else if (name == "windy")
         tex = CreateWindySpectrumTexture(tex2world, tp);
+    else if (name == "ptex")
+        tex = CreatePtexSpectrumTexture(tex2world, tp);
     else
         Warning("Spectrum texture \"%s\" unknown.", name.c_str());
     tp.ReportUnused();
@@ -1407,6 +1415,19 @@ void pbrtWorldEnd() {
 
         if (scene && integrator) integrator->Render(*scene);
 
+        CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::IntegratorRender));
+        ProfilerState = ProfToBits(Prof::SceneConstruction);
+    }
+
+    // Clean up after rendering. Do this before reporting stats so that
+    // destructors can run and update stats as needed.
+    graphicsState = GraphicsState();
+    transformCache.Clear();
+    currentApiState = APIState::OptionsBlock;
+    ImageTexture<Float, Float>::ClearCache();
+    ImageTexture<RGBSpectrum, Spectrum>::ClearCache();
+
+    if (!PbrtOptions.cat && !PbrtOptions.toPly) {
         MergeWorkerThreadStats();
         ReportThreadStats();
 		
@@ -1447,22 +1468,12 @@ void pbrtWorldEnd() {
             ClearStats();
             ClearProfiler();
         }
-
-        CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::IntegratorRender));
-        ProfilerState = ProfToBits(Prof::SceneConstruction);
     }
-
-    // Clean up after rendering
-    graphicsState = GraphicsState();
-    transformCache.Clear();
-    currentApiState = APIState::OptionsBlock;
 
     for (int i = 0; i < MaxTransforms; ++i) curTransform[i] = Transform();
     activeTransformBits = AllTransformsBits;
     namedCoordinateSystems.erase(namedCoordinateSystems.begin(),
                                  namedCoordinateSystems.end());
-    ImageTexture<Float, Float>::ClearCache();
-    ImageTexture<RGBSpectrum, Spectrum>::ClearCache();
 }
 
 Scene *RenderOptions::MakeScene() {
