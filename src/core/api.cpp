@@ -1447,7 +1447,9 @@ void pbrtWorldEnd() {
 			ss << "Timing information:\n"
 			   << "	Start time: " << FormatTime(startTime) << "\n"
 			   << "	End time:   " << FormatTime(endTime) << "\n"
-			   << "	Total Time: " << std::chrono::duration_cast<std::chrono::seconds>(endTime-startTime).count() << " seconds\n\n"
+			   << "	Total Time: " << std::chrono::duration_cast<std::chrono::seconds>(endTime-startTime).count() << " seconds\n"
+			   << "	Threads used: " << MaxThreadIndex() << "\n"
+			   << "\n"
 			   ;
 
 			ss << "Image information:\n"
