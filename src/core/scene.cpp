@@ -66,8 +66,11 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 
 	*/
 
-	// fetch all Reflector vertices
-	std::vector<Point3f> reflectorVertices;
+
+	// pbrt actually stores all triangle vertices in world coordinates (page 155) - so no transformation need to be applied. (I did not know this for quite some time...)
+
+	// fetch all Reflector triangles
+	std::vector<Point3f> reflectorVertices; // usually there is only one very simle reflector so the number of vertices should be <32.
 	for(const auto& obj : primitives)
 	{
 		auto gp = dynamic_cast<const GeometricPrimitive*>(obj.get());
@@ -80,8 +83,7 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 				{
 					auto& p = triangleShape->GetMesh()->p;
 					auto& v = triangleShape->v;
-					auto& transf = *triangleShape->ObjectToWorld;
-					reflectorVertices.insert(reflectorVertices.end(), {transf(p[v[0]]), transf(p[v[1]]), transf(p[v[2]])});
+					reflectorVertices.insert(reflectorVertices.end(), {p[v[0]], p[v[1]], p[v[2]]});
 				}
 			}
 		}
@@ -94,14 +96,13 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 		auto& p = triangle->GetMesh()->p;
 		auto& n = triangle->GetMesh()->n;
 		auto& v = triangle->v;
-		auto& transf = *triangle->ObjectToWorld;
 
-		auto p0=Vector3f(transf(p[v[0]]));
-		auto p1=Vector3f(transf(p[v[1]]));
-		auto p2=Vector3f(transf(p[v[2]]));
-		auto n0=Vector3f(transf(n[v[0]]));
-		auto n1=Vector3f(transf(n[v[1]]));
-		auto n2=Vector3f(transf(n[v[2]]));
+		auto p0=Vector3f(p[v[0]]);
+		auto p1=Vector3f(p[v[1]]);
+		auto p2=Vector3f(p[v[2]]);
+		auto n0=Vector3f(n[v[0]]);
+		auto n1=Vector3f(n[v[1]]);
+		auto n2=Vector3f(n[v[2]]);
 
 		// compute plane
 		auto N = Cross(p0-p1, p0-p2); // we could normalize n - but we do not have to :)
