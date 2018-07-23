@@ -210,6 +210,10 @@ void Film::WriteImage(Float splatScale) {
 }
 
 Film *CreateFilm(const ParamSet &params, std::unique_ptr<Filter> filter) {
+	// Intentionally use FindOneString() rather than FindOneFilename() here
+	// so that the rendered image is left in the working directory, rather
+	// than the directory the scene file lives in.
+	std::string filename = params.FindOneString("filename", "");
 	if(PbrtOptions.imageFile != "") {
 		if(filename != "") {
 			Warning(

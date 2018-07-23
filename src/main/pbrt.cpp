@@ -146,11 +146,10 @@ int main(int argc, char *argv[]) {
 
     // Print welcome banner
     if (!options.quiet && !options.cat && !options.toPly) {
-        printf("Transient Renderer Alpha (built %s at %s) [Detected %d cores]\n",
         if (sizeof(void *) == 4)
             printf("*** WARNING: This is a 32-bit build of pbrt. It will crash "
                    "if used to render highly complex scenes. ***\n");
-        printf("pbrt version 3 (built %s at %s) [Detected %d cores]\n",
+        printf("Transient Renderer Alpha (built %s at %s) [Detected %d cores]\n",
                __DATE__, __TIME__, NumSystemCores());
 		//printf("Based on pbrt-v3 from Matt Pharr, Greg Humphreys, and Wenzel Jakob\n"); // this should be added to the final release
 #ifndef NDEBUG
