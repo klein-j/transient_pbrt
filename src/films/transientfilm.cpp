@@ -3,6 +3,7 @@
 #include "paramset.h"
 #include "imageio.h"
 #include "stats.h"
+#include "TransientImage.hpp"
 
 #include <array>
 #include <fstream>
@@ -110,49 +111,45 @@ void TransientFilm::MergeFilmTile(std::unique_ptr<TransientFilmTile> tile) {
 }
 
 
-// i wanted to have this as a local struct, but apparently a compiler bug in VC 12 prohibits it.
-struct Header
-{
-	const std::array<char, 4> MagicValue = std::array<char, 4>({'T', 'I', '0', '1'});
-	unsigned int tres=0, xres=0, yres=0;
-	float tmin=0, tmax=0;
-} header;
-
 void TransientFilm::WriteImage() {
 	// Convert image to RGB and compute final pixel values
 	LOG(INFO) <<
 		"Converting image to RGB and computing final weighted pixel values";
 
-	std::vector<float> image(croppedPixelBounds.Area() * fullResolution.z);
-	int offset = 0;
-	for(Point2i p : croppedPixelBounds) {
-		for(auto t=0; t<fullResolution.z; ++t)
-		{
-			auto pp= Point3i(p.x, p.y, t);
-			// this is not quite right: if different samples fall in different times bins, the total amount is higher than if they fall into the same one
-			// we have to add weights of all time bins and divide each bin by the total amount.
-			// but how would this be changed, if we wanted also temporal sampling?
-			image[offset] = *GetPixel(pp).intensity / *GetPixel(pp).filterWeightSum;
-			++offset;
-		}
-	}
-
 	// Write RGB image
 	LOG(INFO) << "Writing image " << filename << " with bounds " <<
 		croppedPixelBounds;
 
-	using namespace std;
-	fstream imageFile(filename, ios_base::out | ios_base::binary | ios_base::trunc);
+	LibTransientImage::TransientImage outputImage;
 
-	// write simple header:
-	header.tres = fullResolution.z;
-	header.xres = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x;
-	header.yres = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
-	header.tmin = tmin;
-	header.tmax = tmax;
+	outputImage.header.numBins = fullResolution.z;
+	outputImage.header.numPixels = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x * (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
+	outputImage.header.pixelMode = 10;
+	outputImage.header.pixelInterpretationBlockSize = sizeof(LibTransientImage::T04M10::PixelInterpretationBlock);
+	outputImage.header.tDelta = (tmax - tmin) / fullResolution.z;
+	outputImage.header.tMin = tmin;
 
-	imageFile.write((char*)&header, sizeof(Header));
-	imageFile.write((char*)image.data(), sizeof(float)*croppedPixelBounds.Area() * fullResolution.z);
+	outputImage.data.resize(croppedPixelBounds.Area() * fullResolution.z);
+	int offset = 0;
+	for(Point2i p : croppedPixelBounds) {
+		for(auto t=0; t<fullResolution.z; ++t)
+		{
+			auto pp = Point3i(p.x, p.y, t);
+			// this is not quite right: if different samples fall in different times bins, the total amount is higher than if they fall into the same one
+			// we have to add weights of all time bins and divide each bin by the total amount.
+			// but how would this be changed, if we wanted also temporal sampling?
+			outputImage.data[offset] = *GetPixel(pp).intensity / *GetPixel(pp).filterWeightSum;
+			++offset;
+		}
+	}
+
+	outputImage.pixelInterpretationBlock.uResolution = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x;
+	outputImage.pixelInterpretationBlock.vResolution = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
+	//TODO: set other values
+
+	// TODO: write meta data.
+
+	outputImage.WriteFile(filename);
 }
 
 TransientPixelRef TransientFilm::GetPixel(const Point3i &p) {
