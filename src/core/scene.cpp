@@ -65,7 +65,7 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 	// pbrt actually stores all triangle vertices in world coordinates (page 155) - so no transformation need to be applied. (I did not know this for quite some time...)
 
 	// fetch all Reflector triangles
-	std::vector<Point3f> reflectorVertices; // usually there is only one very simle reflector so the number of vertices should be <32.
+	std::vector<Point3f> reflectorVertices; // usually there is only one very simple reflector, so the number of vertices should be <32.
 	for(const auto& obj : primitives)
 	{
 		auto gp = dynamic_cast<const GeometricPrimitive*>(obj.get());

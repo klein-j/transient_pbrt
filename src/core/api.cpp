@@ -1708,10 +1708,12 @@ void pbrtWorldEnd() {
 }
 
 Scene *RenderOptions::MakeScene() {
+	// for the scene creation, we need the primitive list, which is consumed by the accelerator creation. So we need to do a copy:
+	auto primitivesCopy = primitives;
     std::shared_ptr<Primitive> accelerator =
         MakeAccelerator(AcceleratorName, std::move(primitives), AcceleratorParams);
     if (!accelerator) accelerator = std::make_shared<BVHAccel>(primitives);
-    Scene *scene = new Scene(accelerator, lights, primitives);
+    Scene *scene = new Scene(accelerator, lights, primitivesCopy);
     // Erase primitives and lights from _RenderOptions_
     primitives.clear();
     lights.clear();
