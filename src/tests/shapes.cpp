@@ -241,7 +241,6 @@ TEST(Triangle, Sampling) {
             Point2f u{RadicalInverse(0, j), RadicalInverse(1, j)};
             Float pdf;
             Interaction pTri = tri->Sample(ref, u, &pdf);
-            Vector3f wi = Normalize(pTri.p - pc);
             EXPECT_GT(pdf, 0);
             triSampleEstimate += 1. / (count * pdf);
         }
@@ -295,7 +294,7 @@ TEST(Triangle, SolidAngle) {
         for (int j = 0; j < count; ++j) {
             Point2f u{RadicalInverse(0, j), RadicalInverse(1, j)};
             Float pdf;
-            Interaction pTri = tri->Sample(ref, u, &pdf);
+            (void)tri->Sample(ref, u, &pdf);
             EXPECT_GT(pdf, 0);
             triSampleEstimate += 1. / (count * pdf);
         }
@@ -541,3 +540,20 @@ TEST(Paraboloid, Reintersect) {
     }
 }
 #endif
+
+TEST(Triangle, BadCases) {
+    Transform identity;
+    int indices[3] = { 0, 1, 2 };
+    Point3f p[3] = {  Point3f( -1113.45459, -79.049614, -56.2431908),
+                      Point3f(-1113.45459, -87.0922699, -56.2431908),
+                      Point3f(-1113.45459, -79.2090149, -56.2431908) };
+    auto mesh = CreateTriangleMesh(&identity, &identity, false,
+                                   1, indices, 3, p, nullptr, nullptr, nullptr,
+                                   nullptr, nullptr);
+
+    Ray ray(Point3f( -1081.47925, 99.9999542, 87.7701111),
+            Vector3f(-32.1072998, -183.355865, -144.607635), 0.9999);
+    Float thit;
+    SurfaceInteraction isect;
+    EXPECT_FALSE(mesh[0]->Intersect(ray, &thit, &isect));
+}

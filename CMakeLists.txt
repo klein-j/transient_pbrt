@@ -2,7 +2,7 @@
 # (https://www.slideshare.net/DanielPfeifer1/cmake-48475415) are violated
 # in this file. Would be nice to address some of these.
 
-CMAKE_MINIMUM_REQUIRED ( VERSION 2.8 )
+CMAKE_MINIMUM_REQUIRED ( VERSION 2.8.4 )
 
 PROJECT ( TransientRenderer )
 
@@ -25,15 +25,22 @@ if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/openexr/OpenEXR")
     "by running \"git submodule update --init --recursive\"")
 endif()
 
-if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/glog")
+if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/glog/cmake")
   message(FATAL_ERROR "The glog submodule directory is missing! "
     "You probably did not clone the project with --recursive, or first checked out "
     "pbrt before it was added. It is possible to recover by running "
     "\"git submodule update --init --recursive\"")
 endif()
 
-if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/ptex")
+if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/ptex/src")
   message(FATAL_ERROR "The ptex submodule directory is missing! "
+    "You probably did not clone the project with --recursive, or first checked out "
+    "pbrt before it was added. It is possible to recover by running "
+    "\"git submodule update --init --recursive\"")
+endif()
+
+if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/zlib/doc")
+  message(FATAL_ERROR "The zlib submodule directory is missing! "
     "You probably did not clone the project with --recursive, or first checked out "
     "pbrt before it was added. It is possible to recover by running "
     "\"git submodule update --init --recursive\"")
@@ -94,16 +101,12 @@ IF ( HAVE_MEMORY_H )
   ADD_DEFINITIONS ( -D PBRT_HAVE_MEMORY_H )
 ENDIF ()
 
-CHECK_INCLUDE_FILES ( unistd.h HAVE_UNISTD_H )
-IF ( NOT HAVE_UNISTD_H )
-  ADD_DEFINITIONS ( -D YY_NO_UNISTD_H )
-ENDIF ()
-
 ###########################################################################
 # Check for various C++11 features and set preprocessor variables or
 # define workarounds.
 
 INCLUDE (CheckCXXSourceCompiles)
+INCLUDE (CheckCXXSourceRuns)
 
 CHECK_CXX_SOURCE_COMPILES (
   "int main() { float x = 0x1p-32f; }"
@@ -143,7 +146,7 @@ IF ( HAVE_ALIGNOF )
   ADD_DEFINITIONS ( -D PBRT_HAVE_ALIGNOF )
 ENDIF ()
 
-CHECK_CXX_SOURCE_COMPILES ( "
+CHECK_CXX_SOURCE_RUNS ( "
 #include <signal.h>
 #include <string.h>
 #include <sys/time.h>
@@ -156,7 +159,7 @@ int main() {
     sigemptyset(&sa.sa_mask);
     sigaction(SIGPROF, &sa, NULL);
     static struct itimerval timer;
-    setitimer(ITIMER_PROF, &timer, NULL);
+    return setitimer(ITIMER_PROF, &timer, NULL) == 0 ? 0 : 1;
 }
 " HAVE_ITIMER )
 IF ( HAVE_ITIMER )
@@ -172,6 +175,24 @@ IF ( HAVE_NONPOD_IN_UNIONS )
   ADD_DEFINITIONS ( -D PBRT_HAVE_NONPOD_IN_UNIONS )
 ENDIF ()
 
+CHECK_CXX_SOURCE_COMPILES ( "
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+int main() {
+   int fd = open(\"foo\", O_RDONLY);
+   struct stat s;
+   fstat(fd, &s);
+   size_t len = s.st_size;
+   void *ptr = mmap(0, len, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
+   munmap(ptr, len);   
+}
+" HAVE_MMAP )
+if ( HAVE_MMAP )
+  ADD_DEFINITIONS ( -D PBRT_HAVE_MMAP )
+ENDIF ()
+
 ########################################
 # noinline
 
@@ -185,10 +206,10 @@ CHECK_CXX_SOURCE_COMPILES (
 int main() { }"
 HAVE_ATTRIBUTE_NOINLINE )
 
-IF ( HAVE_DECLSPEC_NOINLINE )
-  ADD_DEFINITIONS ( -D "PBRT_NOINLINE=__declspec(noinline)" )
-ELSEIF ( HAVE_ATTRIBUTE_NOINLINE )
+IF ( HAVE_ATTRIBUTE_NOINLINE )
   ADD_DEFINITIONS ( -D "PBRT_NOINLINE=__attribute__\\(\\(noinline\\)\\)" )
+ELSEIF ( HAVE_DECLSPEC_NOINLINE )
+  ADD_DEFINITIONS ( -D "PBRT_NOINLINE=__declspec(noinline)" )
 ELSE ()
   ADD_DEFINITIONS ( -D PBRT_NOINLINE )
 ENDIF ()
@@ -228,6 +249,10 @@ ENDIF ()
 # thread-local variables
 
 CHECK_CXX_SOURCE_COMPILES ( "
+#ifdef __CYGWIN__
+// Hack to work around https://gcc.gnu.org/bugzilla/show_bug.cgi?id=64697
+#error \"No thread_local on cygwin\"
+#endif  // __CYGWIN__
 thread_local int x; int main() { }
 " HAVE_THREAD_LOCAL )
 
@@ -241,53 +266,13 @@ __thread int x; int main() { }
 
 IF ( HAVE_THREAD_LOCAL )
   ADD_DEFINITIONS ( -D PBRT_THREAD_LOCAL=thread_local )
-ELSEIF ( HAVE_DECLSPEC_THREAD )
-  ADD_DEFINITIONS ( -D "PBRT_THREAD_LOCAL=__declspec(thread)" )
 ELSEIF ( HAVE___THREAD )
   ADD_DEFINITIONS ( -D PBRT_THREAD_LOCAL=__thread )
+ELSEIF ( HAVE_DECLSPEC_THREAD )
+  ADD_DEFINITIONS ( -D "PBRT_THREAD_LOCAL=__declspec(thread)" )
 ELSE ()
   MESSAGE ( SEND_ERROR "Unable to find a way to declare a thread-local variable")
 ENDIF ()
-
-###########################################################################
-# flex / bison
-
-# Optionally use Bison and Flex to regenerate parser files
-# Use pregenerated files otherwise (may be outdated)
-FIND_PACKAGE ( BISON )
-FIND_PACKAGE ( FLEX )
-IF(BISON_FOUND AND FLEX_FOUND)
-  SET(BisonOutput ${CMAKE_BINARY_DIR}/pbrtparse.cpp)
-  ADD_CUSTOM_COMMAND(
-    OUTPUT ${BisonOutput} ${CMAKE_BINARY_DIR}/pbrtparse.h
-    DEPENDS ${CMAKE_SOURCE_DIR}/src/core/pbrtparse.y
-    COMMAND ${BISON_EXECUTABLE} -d -v -t
-            --output=${CMAKE_BINARY_DIR}/pbrtparse.c
-            ${CMAKE_SOURCE_DIR}/src/core/pbrtparse.y
-    COMMAND ${CMAKE_COMMAND} -E rename ${CMAKE_BINARY_DIR}/pbrtparse.c ${CMAKE_BINARY_DIR}/pbrtparse.cpp
-    COMMENT "Generating pbrtparse.cpp and pbrtparse.h"
-  )
-
-  SET(FlexOutput ${CMAKE_BINARY_DIR}/pbrtlex.cpp)
-  ADD_CUSTOM_COMMAND(
-    OUTPUT ${FlexOutput}
-    DEPENDS ${CMAKE_BINARY_DIR}/pbrtparse.h ${CMAKE_SOURCE_DIR}/src/core/pbrtlex.ll
-    COMMAND ${FLEX_EXECUTABLE}
-            -o${FlexOutput}
-            ${CMAKE_SOURCE_DIR}/src/core/pbrtlex.ll
-    COMMENT "Generating pbrtlex.cpp"
-  )
-
-  SET ( PBRT_YACC_LEX_SOURCE
-    ${BisonOutput}
-    ${FlexOutput}
-    )
-ELSE()
-  SET ( PBRT_YACC_LEX_SOURCE
-    src/core/pbrtlex.cpp
-    src/core/pbrtparse.cpp
-    )
-ENDIF()
 
 ###########################################################################
 # zlib
@@ -298,8 +283,7 @@ SET(ZLIB_BUILD_SHARED_LIBS OFF CACHE BOOL " " FORCE)
 ADD_SUBDIRECTORY(src/ext/zlib)
 
 SET(ZLIB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/zlib")
-SET(ZLIB_LIBRARY "${CMAKE_CURRENT_BINARY_DIR}/src/ext/zlib/$<CONFIGURATION>/zlibstatic.lib")
-SET(ZLIB_LIBRARIES zlibstatic)
+  SET(ZLIB_LIBRARY zlibstatic)
 SET_PROPERTY(TARGET zlibstatic PROPERTY FOLDER "dependencies")
 INCLUDE_DIRECTORIES(${ZLIB_INCLUDE_DIR} "${CMAKE_CURRENT_BINARY_DIR}/src/ext/zlib")
 
@@ -326,7 +310,7 @@ INCLUDE_DIRECTORIES (
   ${CMAKE_BINARY_DIR}/src/ext/openexr/OpenEXR/config
 )
 IF(WIN32)
-  SET(OPENEXR_LIBS IlmImf Imath Half ${ZLIB_LIBRARIES})
+  SET(OPENEXR_LIBS IlmImf Imath Half ${ZLIB_LIBRARY})
 ELSE()
 SET(OPENEXR_LIBS IlmImf Imath Half)
 ENDIF()
@@ -351,6 +335,7 @@ IF ( CMAKE_BUILD_TYPE )
   STRING ( TOLOWER ${CMAKE_BUILD_TYPE} LOWER_BUILD_TYPE )
   SET ( ENV{FLAVOR} ${LOWER_BUILD_TYPE} )
 ENDIF ()
+SET(PTEX_BUILD_SHARED_LIBS OFF CACHE BOOL " " FORCE)
 
 SET(CMAKE_MACOSX_RPATH 1)
 IF ( WIN32 )

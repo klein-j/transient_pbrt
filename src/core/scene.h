@@ -40,8 +40,9 @@
 
 // core/scene.h*
 #include "pbrt.h"
+#include "geometry.h"
 #include "primitive.h"
-#include "integrator.h"
+#include "light.h"
 #include "shapes/triangle.h"
 #include "sampling.h"
 
