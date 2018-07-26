@@ -62,6 +62,7 @@ void pbrtActiveTransformStartTime();
 void pbrtTransformTimes(Float start, Float end);
 void pbrtPixelFilter(const std::string &name, const ParamSet &params);
 void pbrtFilm(const std::string &type, const ParamSet &params);
+void pbrtFileInformation(const std::string &type, const ParamSet &params);
 void pbrtSampler(const std::string &name, const ParamSet &params);
 void pbrtAccelerator(const std::string &name, const ParamSet &params);
 void pbrtIntegrator(const std::string &name, const ParamSet &params);

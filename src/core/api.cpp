@@ -115,27 +115,10 @@
 #include "textures/wrinkled.h"
 #include "media/grid.h"
 #include "media/homogeneous.h"
+#include "core/util.h"
 
 #include <map>
 #include <stdio.h>
-
-// ---------- some time formatting stuff ---------
-#include <chrono>
-#include <time.h>
-#include <sstream>
-#include <iomanip>
-
-std::string FormatTime(std::chrono::system_clock::time_point time)
-{
-	auto ctime = std::chrono::system_clock::to_time_t(time);
-	tm b;
-	localtime_s(&b, &ctime);
-	std::stringstream ss;
-	ss  << std::setfill('0') << 1900+b.tm_year << "-" << std::setw(2) << b.tm_mon+1 << "-" << std::setw(2) << b.tm_mday << " " << b.tm_hour << ":" << std::setw(2) << b.tm_min << ":" << std::setw(2) << b.tm_sec;
-	return ss.str();
-}
-//____________________________________________
-
 
 namespace pbrt {
 
@@ -186,6 +169,7 @@ struct RenderOptions {
     ParamSet FilterParams;
     std::string FilmName = "image";
     ParamSet FilmParams;
+	ParamSet FileInformation;
     std::string SamplerName = "halton";
     ParamSet SamplerParams;
     std::string AcceleratorName = "bvh";
@@ -1063,6 +1047,16 @@ void pbrtFilm(const std::string &type, const ParamSet &params) {
     }
 }
 
+void pbrtFileInformation(const std::string &type, const ParamSet &params) {
+	VERIFY_OPTIONS("FileInformation");
+	renderOptions->FileInformation = params;
+	if(PbrtOptions.cat || PbrtOptions.toPly) {
+		printf("%*sFileInformation \"%s\" ", catIndentCount, "", type.c_str());
+		params.Print(catIndentCount);
+		printf("\n");
+	}
+}
+
 void pbrtSampler(const std::string &name, const ParamSet &params) {
     VERIFY_OPTIONS("Sampler");
     renderOptions->SamplerName = name;
@@ -1623,8 +1617,17 @@ void pbrtWorldEnd() {
         pushedTransforms.pop_back();
     }
 
-    // Create scene and render
 	auto startTime = std::chrono::system_clock::now();
+
+	//copy some meta information for transient images
+	g_TFMD.RenderStartTime = startTime;
+	g_TFMD.BlenderFilename = renderOptions->FileInformation.FindOneString("BlenderFilename", "-");
+	g_TFMD.BlenderCurrentFrame = renderOptions->FileInformation.FindOneInt("BlenderCurrentFrame", -1);
+	g_TFMD.ExportTime = renderOptions->FileInformation.FindOneString("ExportTime", "");
+	g_TFMD.RenderSamples = renderOptions->SamplerParams.FindOneInt("pixelsamples", -1);
+	g_TFMD.RenderCores = MaxThreadIndex();
+
+    // Create scene and render
     if (PbrtOptions.cat || PbrtOptions.toPly) {
         printf("%*sWorldEnd\n", catIndentCount, "");
     } else {
@@ -1647,6 +1650,14 @@ void pbrtWorldEnd() {
         ProfilerState = ProfToBits(Prof::SceneConstruction);
     }
 
+	// save some variables that we still need later on
+	auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
+	auto xresolution = renderOptions->FilmParams.FindOneInt("xresolution", -1);
+	auto yresolution = renderOptions->FilmParams.FindOneInt("yresolution", -1);
+	auto tresolution = renderOptions->FilmParams.FindOneInt("tresolution", -1);
+
+
+
     // Clean up after rendering. Do this before reporting stats so that
     // destructors can run and update stats as needed.
     graphicsState = GraphicsState();
@@ -1654,17 +1665,14 @@ void pbrtWorldEnd() {
     currentApiState = APIState::OptionsBlock;
     ImageTexture<Float, Float>::ClearCache();
     ImageTexture<RGBSpectrum, Spectrum>::ClearCache();
-    renderOptions.reset(new RenderOptions);
+	renderOptions.reset(new RenderOptions);
 
     if (!PbrtOptions.cat && !PbrtOptions.toPly) {
         MergeWorkerThreadStats();
         ReportThreadStats();
-		
-		auto endTime = std::chrono::system_clock::now();
 
 		// write stats to file:
 		{
-			auto filename = (renderOptions->FilmParams.FindOneString("filename", "noname")+".log");
 			if(PbrtOptions.imageFile != "")
 			{
 				filename = PbrtOptions.imageFile+".log";
@@ -1675,17 +1683,17 @@ void pbrtWorldEnd() {
 			std::stringstream ss;
 			
 			ss << "Timing information:\n"
-			   << "	Start time: " << FormatTime(startTime) << "\n"
-			   << "	End time:   " << FormatTime(endTime) << "\n"
-			   << "	Total Time: " << std::chrono::duration_cast<std::chrono::seconds>(endTime-startTime).count() << " seconds\n"
-			   << "	Threads used: " << MaxThreadIndex() << "\n"
+			   << "	Start time: " << FormatTime(g_TFMD.RenderStartTime) << "\n"
+			   << "	End time:   " << FormatTime(g_TFMD.RenderEndTime) << "\n"
+			   << "	Total Time: " << std::chrono::duration_cast<std::chrono::seconds>(g_TFMD.RenderEndTime-g_TFMD.RenderStartTime).count() << " seconds\n"
+			   << "	Threads used: " << g_TFMD.RenderCores << "\n"
 			   << "\n"
 			   ;
 
 			ss << "Image information:\n"
-			   << "	Image resolution:    " << renderOptions->FilmParams.FindOneInt("xresolution", -1) << " x " << renderOptions->FilmParams.FindOneInt("yresolution", -1) << "\n"
-			   << "	Temporal resolution: " << renderOptions->FilmParams.FindOneInt("tresolution", -1) << "\n"
-			   << "	Samples per pixel:   " << renderOptions->SamplerParams.FindOneInt("pixelsamples", -1) << "\n\n"
+			   << "	Image resolution:    " << xresolution << " x " << yresolution  << "\n"
+			   << "	Temporal resolution: " << tresolution << "\n"
+			   << "	Samples per pixel:   " << g_TFMD.RenderSamples << "\n\n"
 			   ;
 
 			fprintf(logFile.get(), ss.str().c_str());

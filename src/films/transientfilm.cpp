@@ -4,11 +4,16 @@
 #include "imageio.h"
 #include "stats.h"
 #include "TransientImage.hpp"
+#include "util.h"
 
 #include <array>
 #include <fstream>
+#include <sstream>
 
 namespace pbrt {
+
+
+TransientFileMetaData g_TFMD;
 
 STAT_MEMORY_COUNTER("Memory/Film pixels", filmPixelMemory);
 
@@ -112,6 +117,8 @@ void TransientFilm::MergeFilmTile(std::unique_ptr<TransientFilmTile> tile) {
 
 
 void TransientFilm::WriteImage() {
+	g_TFMD.RenderEndTime = std::chrono::system_clock::now();
+
 	// Convert image to RGB and compute final pixel values
 	LOG(INFO) <<
 		"Converting image to RGB and computing final weighted pixel values";
@@ -120,15 +127,14 @@ void TransientFilm::WriteImage() {
 	LOG(INFO) << "Writing image " << filename << " with bounds " <<
 		croppedPixelBounds;
 
-	LibTransientImage::TransientImage outputImage;
+	LibTransientImage::T01 outputImage;
 
 	outputImage.header.numBins = fullResolution.z;
-	outputImage.header.numPixels = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x * (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
-	outputImage.header.pixelMode = 10;
-	outputImage.header.pixelInterpretationBlockSize = sizeof(LibTransientImage::T04M10::PixelInterpretationBlock);
-	outputImage.header.tDelta = (tmax - tmin) / fullResolution.z;
-	outputImage.header.tMin = tmin;
-
+	outputImage.header.uResolution = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x;
+	outputImage.header.vResolution = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
+	outputImage.header.tmin = tmin;
+	outputImage.header.tmax = tmax;
+	
 	outputImage.data.resize(croppedPixelBounds.Area() * fullResolution.z);
 	int offset = 0;
 	for(Point2i p : croppedPixelBounds) {
@@ -143,12 +149,78 @@ void TransientFilm::WriteImage() {
 		}
 	}
 
-	outputImage.pixelInterpretationBlock.uResolution = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).x;
-	outputImage.pixelInterpretationBlock.vResolution = (croppedPixelBounds.pMax-croppedPixelBounds.pMin).y;
-	//TODO: set other values
+	// add meta information:
+	std::stringstream imageProperties;
 
-	// TODO: write meta data.
+	/*
 
+{
+	"File": {
+		"MetadataVerion": "TransientRenderer"
+	},
+	
+	"RenderParameters": {
+		"Renderer": "TransientRenderer"
+		"BlenderFilename": ""
+		"BlenderCurrentFrame": 0
+		"BlenderExportTime": ""
+	}
+}
+	*/
+
+	imageProperties << "\n\n\n"
+		<< "{\n"
+		<< "	\"File\": {\n"
+		<< "		\"MetadataVerion\": \"TransientRenderer\"\n"
+		<< "	},\n"
+		<< "	\n"
+		<< "	\"RenderParameters\": {\n"
+		<< "		\"Renderer\": \"TransientRenderer\",\n"
+		<< "		\"InputFile\": \"" << g_TFMD.RenderInputFile << "\",\n"
+		<< "		\"BlenderExport\": {\n"
+		<< "			\"Filename\": \"" << g_TFMD.BlenderFilename << "\",\n"
+		<< "			\"CurrentFrame\": " << g_TFMD.BlenderCurrentFrame << ",\n"
+		<< "			\"ExportTime\": \"" << g_TFMD.ExportTime << "\"\n"
+		<< "		},\n"
+		<< "		\"StartTime\": \"" << FormatTime(g_TFMD.RenderStartTime) << "\"\n" 
+		<< "		\"EndTime\": \"" << FormatTime(g_TFMD.RenderEndTime) << "\"\n"
+		<< "		\"TotalSeconds\": \"" << std::chrono::duration_cast<std::chrono::seconds>(g_TFMD.RenderEndTime-g_TFMD.RenderStartTime).count() << "\"\n"
+		<< "		\"Samples\": \"" << g_TFMD.RenderSamples <<"\"\n"
+		<< "		\"Cores\": \"" << g_TFMD.RenderCores <<"\"\n"
+		<< "	}\n"
+		<< "}"
+		<< std::endl;
+
+	outputImage.imageProperties = imageProperties.str();
+	/*
+	std::string BlenderFilename;
+	int BlenderCurrentFrame;
+	std::string ExportTime;
+
+	std::string RenderInputFile;
+	std::chrono::time_point<std::chrono::system_clock> RenderStartTime;
+	std::chrono::time_point<std::chrono::system_clock> RenderEndTime;
+	unsigned int RenderTotalSeconds;
+	unsigned int RenderSamples;
+	unsigned int RenderCores;
+
+
+	Export
+	- date & time
+	- filename
+	- frame
+
+	Input
+	- filename
+
+	Render
+	- start time
+	- end time
+	- total time
+	- samples
+	- threads used
+
+	*/
 	outputImage.WriteFile(filename);
 }
 

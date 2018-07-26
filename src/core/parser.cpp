@@ -920,6 +920,8 @@ static void parse(std::unique_ptr<Tokenizer> t) {
         case 'F':
             if (tok == "Film")
                 basicParamListEntrypoint(SpectrumType::Reflectance, pbrtFilm);
+			else if(tok == "FileInformation")
+				basicParamListEntrypoint(SpectrumType::Reflectance, pbrtFileInformation);
             else
                 syntaxError(tok);
             break;

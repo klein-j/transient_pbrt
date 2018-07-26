@@ -49,21 +49,21 @@ unsigned int ReadTransientImageFileVersion(std::string filename)
 
 using Vec3 = std::array<float, 3>;
 
+
+
 ////////////////////////////////
 //
 //      Transient Image
 //
 ////////////////////////////////
 
-
-// class for the old file format
 class T01
 {
 public:
 	struct Header
 	{
 		std::array<char, 4> MagicValue;
-		unsigned int tres=0, ures=0, vres=0;
+		unsigned int numBins=0, uResolution=0, vResolution=0;
 		float tmin=0, tmax=0;
 	};
 
@@ -78,13 +78,14 @@ public:
 
 	Header header;
 	std::vector<float> data;
+	std::string imageProperties;
 };
 
 T01::T01()
 {
 	// initialize header
 	header.MagicValue = {'T', 'I', '0', '1'};
-	header.ures=header.vres=header.tres=0;
+	header.uResolution=header.vResolution=header.numBins=0;
 	header.tmin=header.tmax = 0;
 }
 
@@ -105,9 +106,9 @@ void T01::ReadFile(std::string filename)
 		{
 			// convert flipped fields: XYT -> TXY
 			auto h = header;
-			header.tres = h.ures;
-			header.ures = h.vres;
-			header.vres = h.tres;
+			header.numBins = h.uResolution;
+			header.uResolution = h.vResolution;
+			header.vResolution = h.numBins;
 		}
 		else if("TI01" == std::string(header.MagicValue.data(), 4))
 		{
@@ -116,9 +117,19 @@ void T01::ReadFile(std::string filename)
 		else
 			throw Exception("Header doesn't indicate supported transient image file: "+std::string(header.MagicValue.data(), 4));
 		
-		auto elements = header.ures*header.vres*header.tres;
+		auto elements = header.uResolution*header.vResolution*header.numBins;
 		data.resize(elements);
 		file.read(reinterpret_cast<char*>(data.data()), sizeof(float)*elements);
+
+		// count remaining bytes
+		const auto currentFilePosition = file.tellg();
+		file.seekg(0, std::ifstream::end);
+		unsigned int propertiesLength = file.tellg()-currentFilePosition;
+		file.seekg(currentFilePosition);
+
+		// read image properties string
+		imageProperties.resize(propertiesLength);
+		file.read(reinterpret_cast<char*>(&imageProperties[0]), sizeof(char)*propertiesLength); // in C++11 std::string data is stored in a contiguous byte array
 	}
 	catch(std::exception &ex)
 	{
@@ -133,8 +144,9 @@ void T01::WriteFile(std::string filename)
 		std::ofstream file(filename, std::ios::binary);
 		file.exceptions(std::ofstream::failbit);
 		file.write(reinterpret_cast<char*>(&header), sizeof(header));
-		const auto elements = header.ures*header.vres*header.tres;
+		const auto elements = header.uResolution*header.vResolution*header.numBins;
 		file.write(reinterpret_cast<char*>(data.data()), sizeof(float)*elements);
+		file.write(reinterpret_cast<const char*>(imageProperties.data()), sizeof(char)*imageProperties.length());
 	}
 	catch(std::exception &ex)
 	{
@@ -144,7 +156,7 @@ void T01::WriteFile(std::string filename)
 
 float& T01::operator()(int t, int u, int v)
 {
-	return data[ t + header.tres*(u + header.ures*(v))];
+	return data[ t + header.numBins*(u + header.uResolution*(v))];
 }
 float& T01::AccessPixel(int t, int u, int v)
 {
@@ -154,7 +166,7 @@ float& T01::AccessPixel(int t, int u, int v)
 
 const float& T01::operator()(int t, int u, int v) const
 {
-	return data[ t + header.tres*(u + header.ures*(v))];
+	return data[ t + header.numBins*(u + header.uResolution*(v))];
 }
 const float& T01::AccessPixel(int t, int u, int v) const
 {
@@ -274,9 +286,9 @@ void T04M10::ReadFileVersion01(std::ifstream& file)
 	{
 		// convert flipped fields: XYT -> TXY
 		auto h = oldHeader;
-		oldHeader.tres = h.ures;
-		oldHeader.ures = h.vres;
-		oldHeader.vres = h.tres;
+		oldHeader.numBins = h.uResolution;
+		oldHeader.uResolution = h.vResolution;
+		oldHeader.vResolution = h.numBins;
 	}
 	else if("TI01" == std::string(oldHeader.MagicValue.data(), 4))
 	{
@@ -286,16 +298,16 @@ void T04M10::ReadFileVersion01(std::ifstream& file)
 		throw Exception("Header doesn't indicate supported transient image file: "+std::string(oldHeader.MagicValue.begin(), oldHeader.MagicValue.end()));
 
 
-	auto numValues = oldHeader.ures*oldHeader.vres*oldHeader.tres;
+	auto numValues = oldHeader.uResolution*oldHeader.vResolution*oldHeader.numBins;
 	
 	
 	// Image Header
 	header.MagicValue = TiVersion04;
 	header.pixelMode = 10;
-	header.numPixels = oldHeader.ures*oldHeader.vres;
-	header.numBins = oldHeader.tres;
+	header.numPixels = oldHeader.uResolution*oldHeader.vResolution;
+	header.numBins = oldHeader.numBins;
 	header.tMin = oldHeader.tmin;
-	header.tDelta = (float)(oldHeader.tmax-oldHeader.tmin) / (float)oldHeader.tres;
+	header.tDelta = (float)(oldHeader.tmax-oldHeader.tmin) / (float)oldHeader.numBins;
 	header.pixelInterpretationBlockSize = sizeof(PixelInterpretationBlock);
 
 
@@ -304,18 +316,28 @@ void T04M10::ReadFileVersion01(std::ifstream& file)
 	file.read(reinterpret_cast<char*>(data.data()), sizeof(float)*numValues);
 
 	// Pixel Interpretation
-	pixelInterpretationBlock.uResolution = oldHeader.ures;
-	pixelInterpretationBlock.vResolution = oldHeader.vres;
+	pixelInterpretationBlock.uResolution = oldHeader.uResolution;
+	pixelInterpretationBlock.vResolution = oldHeader.vResolution;
 	// we assume the reflector is the XZ plane
-	auto ures = static_cast<float>(oldHeader.ures);
-	auto vres = static_cast<float>(oldHeader.vres);
+	auto uResolution = static_cast<float>(oldHeader.uResolution);
+	auto vResolution = static_cast<float>(oldHeader.vResolution);
 	pixelInterpretationBlock.topLeft     = {0,    0, 0};
-	pixelInterpretationBlock.topRight    = {ures, 0, 0};
-	pixelInterpretationBlock.bottomLeft  = {0,    0, vres};
-	pixelInterpretationBlock.bottomRight = {ures, 0, vres};
+	pixelInterpretationBlock.topRight    = {uResolution, 0, 0};
+	pixelInterpretationBlock.bottomLeft  = {0,    0, vResolution};
+	pixelInterpretationBlock.bottomRight = {uResolution, 0, vResolution};
 
 	// Image properties
-	// TODO: add note, that this file was converted
+	// count remaining bytes
+	const auto currentFilePosition = file.tellg();
+	file.seekg(0, std::ifstream::end);
+	unsigned int propertiesLength = file.tellg()-currentFilePosition;
+	file.seekg(currentFilePosition);
+
+	// read image properties string
+	imageProperties.resize(propertiesLength);
+	file.read(reinterpret_cast<char*>(&imageProperties[0]), sizeof(char)*propertiesLength); // in C++11 std::string data is stored in a contiguous byte array
+
+	// TODO: potentially add note to imageproperties, that this file was converted
 }
 
 void T04M10::ReadFileVersion04(std::ifstream& file)

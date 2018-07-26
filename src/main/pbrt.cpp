@@ -38,6 +38,7 @@
 #include "parallel.h"
 #include "rng.h"
 #include <glog/logging.h>
+#include "films/transientfilm.h" // to store the inputfilename for the later export
 
 using namespace pbrt;
 
@@ -173,6 +174,7 @@ int main(int argc, char *argv[]) {
         // Parse scene from standard input
         pbrtParseFile("-");
     } else {
+		g_TFMD.RenderInputFile = filenames[0];
         // Parse scene from input files
         for (const std::string &f : filenames)
             pbrtParseFile(f);

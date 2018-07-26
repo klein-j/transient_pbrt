@@ -16,7 +16,25 @@
 
 namespace pbrt {
 
-	
+
+// we want some meta data about the rendering in the output file.
+// sadly those are hard to access so instead of rewriting half of pbrt,
+// we'll just use global variables. Hopefully one day we'll have a nice solution for this :'(
+struct TransientFileMetaData
+{
+	std::string BlenderFilename;
+	int BlenderCurrentFrame;
+	std::string ExportTime;
+
+	std::string RenderInputFile;
+	std::chrono::time_point<std::chrono::system_clock> RenderStartTime;
+	std::chrono::time_point<std::chrono::system_clock> RenderEndTime;
+	unsigned int RenderSamples;
+	unsigned int RenderCores;
+};
+
+extern TransientFileMetaData g_TFMD;
+
 
 /* the normal path tracer would just accumulate intensities from multiple paths and return
 	their sum. As each different path has a different length, we can't do this any more.
