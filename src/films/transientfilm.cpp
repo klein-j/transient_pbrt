@@ -151,23 +151,6 @@ void TransientFilm::WriteImage() {
 
 	// add meta information:
 	std::stringstream imageProperties;
-
-	/*
-
-{
-	"File": {
-		"MetadataVerion": "TransientRenderer"
-	},
-	
-	"RenderParameters": {
-		"Renderer": "TransientRenderer"
-		"BlenderFilename": ""
-		"BlenderCurrentFrame": 0
-		"BlenderExportTime": ""
-	}
-}
-	*/
-
 	imageProperties << "\n\n\n"
 		<< "{\n"
 		<< "	\"File\": {\n"
@@ -182,45 +165,15 @@ void TransientFilm::WriteImage() {
 		<< "			\"CurrentFrame\": " << g_TFMD.BlenderCurrentFrame << ",\n"
 		<< "			\"ExportTime\": \"" << g_TFMD.ExportTime << "\"\n"
 		<< "		},\n"
-		<< "		\"StartTime\": \"" << FormatTime(g_TFMD.RenderStartTime) << "\"\n" 
-		<< "		\"EndTime\": \"" << FormatTime(g_TFMD.RenderEndTime) << "\"\n"
-		<< "		\"TotalSeconds\": \"" << std::chrono::duration_cast<std::chrono::seconds>(g_TFMD.RenderEndTime-g_TFMD.RenderStartTime).count() << "\"\n"
-		<< "		\"Samples\": \"" << g_TFMD.RenderSamples <<"\"\n"
+		<< "		\"StartTime\": \"" << FormatTime(g_TFMD.RenderStartTime) << "\",\n" 
+		<< "		\"EndTime\": \"" << FormatTime(g_TFMD.RenderEndTime) << "\",\n"
+		<< "		\"TotalSeconds\": \"" << std::chrono::duration_cast<std::chrono::seconds>(g_TFMD.RenderEndTime-g_TFMD.RenderStartTime).count() << "\",\n"
+		<< "		\"Samples\": \"" << g_TFMD.RenderSamples <<"\",\n"
 		<< "		\"Cores\": \"" << g_TFMD.RenderCores <<"\"\n"
 		<< "	}\n"
 		<< "}"
 		<< std::endl;
-
 	outputImage.imageProperties = imageProperties.str();
-	/*
-	std::string BlenderFilename;
-	int BlenderCurrentFrame;
-	std::string ExportTime;
-
-	std::string RenderInputFile;
-	std::chrono::time_point<std::chrono::system_clock> RenderStartTime;
-	std::chrono::time_point<std::chrono::system_clock> RenderEndTime;
-	unsigned int RenderTotalSeconds;
-	unsigned int RenderSamples;
-	unsigned int RenderCores;
-
-
-	Export
-	- date & time
-	- filename
-	- frame
-
-	Input
-	- filename
-
-	Render
-	- start time
-	- end time
-	- total time
-	- samples
-	- threads used
-
-	*/
 	outputImage.WriteFile(filename);
 }
 
