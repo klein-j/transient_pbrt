@@ -128,6 +128,7 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 
 
 	std::vector<const Triangle*> result;
+	auto numberOfCulledPrimitives = 0u;
 	// iterate over all objects in the aggregate, and save all NlosObject's
 	for(const auto& obj : primitives)
 	{
@@ -141,13 +142,20 @@ std::vector<const Triangle*> InitializeNlosObjects(std::vector<std::shared_ptr<P
 				{
 					if(CheckVisibility(triangleShape))
 						result.emplace_back(triangleShape);
+					else
+						numberOfCulledPrimitives++;
 				}
 			}
 		}
 	}
 
 	if(!reflectorVertices.empty() && result.empty())
+	{
 		Error("NLoS reflector but no NLoS objects present in scene");
+		if(numberOfCulledPrimitives > 0)
+			Error("All NLoS object primitives are facing away from the wall");
+	}
+
 
 	return result;
 }
