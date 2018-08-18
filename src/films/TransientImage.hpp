@@ -14,7 +14,7 @@ class Exception : public std::exception
 {
 public:
 	Exception(std::string message): message(message) {}
-	virtual const char* what() const override
+	virtual const char* what() const noexcept override
 	{ return message.c_str(); }
 private:
 	std::string message;
@@ -46,6 +46,7 @@ unsigned int ReadTransientImageFileVersion(std::string filename)
 	throw Exception("Unknown File version: "+std::string(inputFile.begin(), inputFile.end()));
 }
 
+const unsigned int CurrentFileVersion = 4;
 
 using Vec3 = std::array<float, 3>;
 
@@ -321,10 +322,7 @@ void T04M10::ReadFileVersion01(std::ifstream& file)
 	// we assume the reflector is the XZ plane
 	auto uResolution = static_cast<float>(oldHeader.uResolution);
 	auto vResolution = static_cast<float>(oldHeader.vResolution);
-	pixelInterpretationBlock.topLeft     = {0,    0, 0};
-	pixelInterpretationBlock.topRight    = {uResolution, 0, 0};
-	pixelInterpretationBlock.bottomLeft  = {0,    0, vResolution};
-	pixelInterpretationBlock.bottomRight = {uResolution, 0, vResolution};
+	// we keep the corner points empty because we know nothing about the geometry
 
 	// Image properties
 	// count remaining bytes
