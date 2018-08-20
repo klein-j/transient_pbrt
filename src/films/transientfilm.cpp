@@ -154,7 +154,7 @@ void TransientFilm::WriteImage() {
 	imageProperties << "\n\n\n"
 		<< "{\n"
 		<< "	\"File\": {\n"
-		<< "		\"MetadataVerion\": \"TransientRenderer\"\n"
+		<< "		\"MetadataVersion\": \"TransientRenderer\"\n"
 		<< "	},\n"
 		<< "	\n"
 		<< "	\"RenderParameters\": {\n"
