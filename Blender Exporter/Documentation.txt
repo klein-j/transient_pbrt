@@ -1,0 +1,20 @@
+Blender exporter for pbrt-v3
+----------------------------
+by Jonathan Klein
+
+
+
+This exporter is far from being complete, but it can export basic scenes. Here are a few things to look out for:
+
+- All Objects / Cameras / etc. will be set to quaternion rotation mode by the script. This could maybe be fixed.
+- A scene can only have one camera.
+- All material properties except for the dedicated pbrt material properties are ignored.
+- Each file has to start with 'Scale -1 1 1' which technically should not be needed. Though right now it is the simplest solution to get things right...
+- All objects must have materials assigned to them
+- parenting can result in wrong transformations (not supported hence)
+- smooth / hard shaded normals are a problem, too
+
+TODO:
+=====
+- doesn't write scene description file for rendering, but pass it directly to pbrt
+- enable all properties for pbrt renderer (especially object data, the window is empty for now)
